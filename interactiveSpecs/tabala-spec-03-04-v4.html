@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Tabala — Spec: Muixerangues & My Group</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{--pr:#B91C3C;--pl:#FDECEA;--bg:#F3F4F6;--sur:#fff;--bor:#E5E7EB;--t1:#111827;--t2:#6B7280;--t3:#9CA3AF;--gn:#166534;--gnb:#DCFCE7;--gnbd:#BBF7D0;}
+body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--t1);line-height:1.5;}
+.page{max-width:1300px;margin:0 auto;padding:2.5rem 2rem 5rem;}
+
+/* PAGE HEADER */
+.ph{margin-bottom:2rem;padding-bottom:1.25rem;border-bottom:1px solid var(--bor);}
+.ey{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--t3);font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.ey::before{content:'';display:block;width:18px;height:2px;background:var(--pr);}
+.ptitle{font-size:28px;font-weight:700;letter-spacing:-.4px;margin-bottom:4px;}
+.psub{font-size:13px;color:var(--t2);max-width:640px;}
+.bgs{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+.bdg{display:inline-flex;align-items:center;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;}
+.bp{background:var(--pl);color:var(--pr);border:1px solid #F9A8B8;}
+.bn{background:var(--sur);color:var(--t2);border:1px solid var(--bor);}
+
+/* SECTION LAYOUT */
+.sec-block{display:grid;grid-template-columns:430px 1fr;gap:3rem;align-items:start;margin-bottom:3rem;}
+@media(max-width:960px){.sec-block{grid-template-columns:1fr;}}
+.sec-div{height:1px;background:var(--bor);margin:2.5rem 0;position:relative;}
+.sec-div-lbl{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--bg);padding:0 14px;font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;}
+
+/* PHONE SHELL */
+.phone-col{display:flex;flex-direction:column;align-items:center;gap:12px;position:sticky;top:1.5rem;}
+.ptoggle{display:flex;gap:4px;width:390px;flex-wrap:wrap;}
+.ptbtn{flex:1;font-size:11px;font-weight:600;padding:6px 8px;border-radius:8px;border:1px solid var(--bor);background:var(--sur);color:var(--t2);cursor:pointer;text-align:center;transition:all .15s;white-space:nowrap;}
+.ptbtn.active{background:var(--pr);color:#fff;border-color:var(--pr);}
+.pcap{font-size:11px;color:var(--t3);text-align:center;max-width:380px;line-height:1.5;}
+.pcap strong{color:var(--t2);}
+.phone-shell-wrap{position:relative;display:inline-block;}
+.phone-shell-wrap::before{content:'';position:absolute;right:-13px;top:130px;width:5px;height:55px;background:#222;border-radius:0 3px 3px 0;box-shadow:0 65px 0 #222;}
+.phone-shell-wrap::after{content:'';position:absolute;left:-13px;top:160px;width:5px;height:48px;background:#222;border-radius:3px 0 0 3px;}
+.phone-shell{width:390px;height:780px;background:#fff;border:10px solid #1a1a1a;border-radius:44px;box-shadow:0 0 0 1.5px #333,inset 0 0 0 1px #2a2a2a,0 24px 60px rgba(0,0,0,.4);overflow:hidden;display:flex;flex-direction:column;}
+.status-bar{background:#111;height:38px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+.status-bar::after{content:'';width:12px;height:12px;border-radius:50%;background:#000;border:2px solid #1a1a1a;}
+.screen{display:none;flex-direction:column;width:100%;flex:1;min-height:0;}
+.screen.active{display:flex;}
+.scroll{flex:1;overflow-y:auto;scrollbar-width:none;}
+.scroll::-webkit-scrollbar{display:none;}
+
+/* APP CHROME */
+.topbar{background:var(--pr);padding:12px 16px 10px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.topbar-title{font-size:18px;font-weight:700;color:#fff;}
+.topbar-sub{font-size:11px;color:rgba(255,255,255,.7);}
+.topbar-logo{width:36px;height:36px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--pr);}
+.topbar-back{display:flex;align-items:center;gap:6px;color:#fff;font-size:14px;font-weight:600;flex:1;}
+.topbar-back svg{width:20px;height:20px;}
+.nav{border-top:.5px solid var(--bor);display:flex;background:#fff;flex-shrink:0;}
+.nt{flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 4px 10px;gap:2px;}
+.nt svg{width:22px;height:22px;color:var(--t3);}
+.nt.active svg{color:var(--pr);}
+.nt-lbl{font-size:10px;color:var(--t3);font-weight:500;}
+.nt.active .nt-lbl{color:var(--pr);font-weight:700;}
+
+/* FILTER CHIPS */
+.chips{display:flex;gap:6px;padding:10px 14px;overflow-x:auto;scrollbar-width:none;background:#fff;border-bottom:.5px solid var(--bor);flex-shrink:0;}
+.chips::-webkit-scrollbar{display:none;}
+.chip{font-size:11px;font-weight:600;padding:5px 14px;border-radius:20px;white-space:nowrap;cursor:pointer;}
+.chip.act{background:var(--pr);color:#fff;}
+.chip.ina{background:#F3F4F6;color:var(--t2);border:1px solid var(--bor);}
+.res-lbl{font-size:11px;color:var(--t3);padding:6px 14px;background:#fff;border-bottom:.5px solid var(--bor);flex-shrink:0;}
+
+/* GROUP CARD IN LIST */
+.gc{display:flex;align-items:stretch;background:#fff;border-bottom:.5px solid var(--bor);cursor:pointer;transition:background .12s;}
+.gc:hover{background:#fafafa;}
+.gc-color{width:80px;flex-shrink:0;}
+.gc-bands{width:100%;height:100%;display:flex;flex-direction:column;}
+.gc-band{flex:1;}
+.gc-info{flex:1;padding:10px 12px;}
+.gc-name{font-size:14px;font-weight:700;margin-bottom:3px;}
+.gc-loc{font-size:11px;color:var(--t2);display:flex;align-items:center;gap:3px;margin-bottom:6px;}
+.gc-loc svg{width:10px;height:10px;}
+.gc-stats{display:flex;gap:12px;}
+.gcs-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:var(--t3);font-weight:600;}
+.gcs-val{font-size:13px;font-weight:700;}
+.gc-stars{display:flex;gap:1px;margin-top:5px;align-items:center;}
+.star{font-size:11px;}
+.score{font-size:11px;color:var(--t2);margin-left:3px;font-weight:600;}
+
+/* GROUP DETAIL — all sections in one screen */
+.gd-logo{width:64px;height:64px;border-radius:50%;border:3px solid var(--pr);background:var(--pl);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--pr);margin:14px auto 6px;text-align:center;line-height:1.2;}
+.gd-name{font-size:20px;font-weight:700;text-align:center;margin-bottom:2px;}
+.gd-sub{font-size:12px;color:var(--pr);text-align:center;margin-bottom:10px;}
+.gd-stats{display:flex;justify-content:center;gap:24px;padding:10px 0;border-top:.5px solid var(--bor);border-bottom:.5px solid var(--bor);margin:0 14px 12px;}
+.gds-val{font-size:20px;font-weight:700;text-align:center;}
+.gds-lbl{font-size:9px;color:var(--t2);text-transform:uppercase;letter-spacing:.04em;text-align:center;}
+.gd-photo{margin:0 14px 12px;height:90px;border-radius:10px;background:#374151;display:flex;align-items:center;justify-content:center;font-size:28px;}
+
+/* Section headings inside detail */
+.gd-section-hdr{font-size:15px;font-weight:700;padding:0 14px 8px;}
+
+/* History text */
+.gd-hist{font-size:12px;color:var(--t2);line-height:1.6;padding:0 14px 14px;}
+
+/* Section divider inside scroll */
+.gd-divider{height:.5px;background:var(--bor);margin:4px 14px 12px;}
+
+/* ACHIEVEMENTS */
+.ach{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;margin:0 14px 6px;}
+.ach-ic{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;background:rgba(255,255,255,.2);flex-shrink:0;}
+.ach-txt{flex:1;min-width:0;}
+.ach-t{font-size:12px;font-weight:700;color:#fff;line-height:1.3;}
+.ach-s{font-size:10px;color:rgba(255,255,255,.75);}
+.ach-yr{font-size:11px;font-weight:700;color:#fff;flex-shrink:0;}
+
+/* MEMBERS */
+.mi{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:.5px solid var(--bor);}
+.mi-av{width:36px;height:36px;border-radius:50%;background:var(--pl);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+.mi-info{flex:1;}
+.mi-name{font-size:13px;font-weight:700;}
+.mi-role{font-size:10px;color:var(--t3);}
+.mi-right{display:flex;flex-direction:column;align-items:flex-end;gap:3px;}
+.mb{font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;color:#fff;}
+.mb-baix{background:#E91E8C;}.mb-anx{background:#F59E0B;}.mb-seg{background:#7C3AED;}.mb-ter{background:#2563EB;}.mb-dos{background:#059669;}.mb-pin{background:#C2410C;}
+.mi-yrs{font-size:10px;color:var(--t3);}
+.see-all{display:block;width:calc(100% - 28px);margin:10px 14px;padding:10px;text-align:center;font-size:12px;font-weight:600;color:var(--pr);border:1px solid var(--bor);border-radius:10px;background:#fff;cursor:pointer;}
+
+/* ── SPEC SIDE ── */
+.scol{}
+.ss{margin-bottom:1.75rem;}
+.sh{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--t3);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.sh::after{content:'';flex:1;height:1px;background:var(--bor);}
+.sc{background:var(--sur);border:1px solid var(--bor);border-radius:12px;overflow:hidden;margin-bottom:8px;}
+.sch{padding:10px 14px;border-bottom:1px solid var(--bor);background:#FAFAFA;font-size:12px;font-weight:700;}
+.scs{font-size:10px;color:var(--t3);margin-top:1px;}
+.scb{padding:12px 14px;}
+.sr{display:flex;gap:10px;font-size:12px;padding:7px 0;border-bottom:.5px solid #F3F4F6;}
+.sr:last-child{border-bottom:none;padding-bottom:0;}
+.srl{font-weight:600;color:var(--t1);min-width:150px;flex-shrink:0;}
+.srv{color:var(--t2);flex:1;line-height:1.5;}
+.srv code{font-family:monospace;font-size:10px;background:#F3F4F6;padding:1px 4px;border-radius:3px;}
+
+/* Access table */
+.atbl{width:100%;border-collapse:collapse;font-size:11px;}
+.atbl th{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);padding:6px 10px;text-align:left;border-bottom:1px solid var(--bor);background:#FAFAFA;}
+.atbl td{padding:7px 10px;border-bottom:.5px solid var(--bor);color:var(--t2);line-height:1.4;}
+.atbl tr:last-child td{border-bottom:none;}
+.atbl td:first-child{font-weight:600;color:var(--t1);}
+.chk{color:var(--gn);font-weight:700;}.crs{color:#DC2626;font-weight:700;}
+
+/* Role badge legend */
+.rb-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:8px;}
+.rb-item{display:flex;align-items:center;gap:7px;background:var(--sur);border:1px solid var(--bor);border-radius:7px;padding:7px 10px;font-size:12px;}
+.rb-dot{width:14px;height:14px;border-radius:3px;flex-shrink:0;}
+
+/* Detail section layout diagram */
+.layout-diagram{background:#F9FAFB;border:1px solid var(--bor);border-radius:12px;overflow:hidden;margin-bottom:8px;}
+.ld-row{padding:9px 14px;border-bottom:.5px solid var(--bor);display:flex;align-items:center;gap:10px;font-size:12px;}
+.ld-row:last-child{border-bottom:none;}
+.ld-num{width:22px;height:22px;border-radius:50%;background:var(--pl);color:var(--pr);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.ld-label{font-weight:600;color:var(--t1);flex:1;}
+.ld-note{font-size:11px;color:var(--t2);}
+
+/* EDGE */
+.es{margin-top:2rem;padding-top:1.75rem;border-top:1px solid var(--bor);}
+.et{font-size:16px;font-weight:700;letter-spacing:-.2px;margin-bottom:4px;}
+.esu{font-size:12px;color:var(--t2);margin-bottom:1rem;}
+.eg{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;}
+.ec{background:var(--sur);border:1px solid var(--bor);border-radius:11px;overflow:hidden;}
+.ech{padding:8px 12px;background:#FAFAFA;border-bottom:1px solid var(--bor);font-size:11px;font-weight:700;}
+.ecb{padding:10px 12px;font-size:11px;color:var(--t2);line-height:1.5;}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="ph">
+  <div class="ey">Tabala · Specification</div>
+  <div class="ptitle">Sections 3 & 4 — Muixerangues & My Group</div>
+  <div class="psub">Section 3: public directory of all Muixeranga groups. The group detail screen contains the full group profile: logo, stats, photo, history, achievements and member list — all in one scrollable view. Section 4 content (achievements, members) lives inside the Section 3 group detail.</div>
+  <div class="bgs">
+    <span class="bdg bp">Screen: Muixerangues (S3 list)</span>
+    <span class="bdg bp">Screen: Group detail (S3 + S4 combined)</span>
+    <span class="bdg bn">Members: private per group</span>
+    <span class="bdg bn">Edit: Mestre only</span>
+  </div>
+</div>
+
+<!-- ===== SECTION 3: LIST ===== -->
+<div class="sec-block">
+  <div class="phone-col">
+    <div class="ptoggle">
+      <div class="ptbtn active" onclick="s3('list')">Group list</div>
+      <div class="ptbtn" onclick="s3('detail')">Group detail</div>
+    </div>
+    <div class="phone-shell-wrap">
+      <div class="phone-shell">
+        <div class="status-bar"></div>
+
+        <!-- LIST -->
+        <div class="screen active" id="s3-list">
+          <div class="topbar"><div><div class="topbar-title">Muixerangues</div><div class="topbar-sub">Descobrix altres muixerangues</div></div></div>
+          <div class="chips">
+            <div class="chip act">Totes</div>
+            <div class="chip ina">València</div>
+            <div class="chip ina">Alzira</div>
+            <div class="chip ina">Més actives</div>
+          </div>
+          <div class="res-lbl">S'han trobat 8 muixerangues</div>
+          <div class="scroll">
+            <div class="gc" onclick="s3('detail')">
+              <div class="gc-color"><div class="gc-bands"><div class="gc-band" style="background:#1D4ED8;flex:2;"></div><div class="gc-band" style="background:#FBBF24;flex:1;"></div><div class="gc-band" style="background:#1D4ED8;flex:2;"></div></div></div>
+              <div class="gc-info"><div class="gc-name">Muixeranga d'Algemesí</div><div class="gc-loc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Algemesí</div><div class="gc-stats"><div><div class="gcs-lbl">Fundada</div><div class="gcs-val">1733</div></div><div><div class="gcs-lbl">Membres</div><div class="gcs-val">150</div></div><div><div class="gcs-lbl">Premis</div><div class="gcs-val">15</div></div></div><div class="gc-stars"><span class="star">⭐</span><span class="star">⭐</span><span class="star">⭐</span><span class="star">⭐</span><span class="star">⭐</span><span class="score">4.8</span></div></div>
+            </div>
+            <div class="gc" onclick="s3('detail')">
+              <div class="gc-color"><div class="gc-bands"><div class="gc-band" style="background:#16A34A;flex:2;"></div><div class="gc-band" style="background:#fff;flex:1;border:.5px solid #eee;"></div><div class="gc-band" style="background:#16A34A;flex:2;"></div></div></div>
+              <div class="gc-info"><div class="gc-name">Muixeranga de València</div><div class="gc-loc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>València</div><div class="gc-stats"><div><div class="gcs-lbl">Fundada</div><div class="gcs-val">1980</div></div><div><div class="gcs-lbl">Membres</div><div class="gcs-val">120</div></div><div><div class="gcs-lbl">Premis</div><div class="gcs-val">25</div></div></div><div class="gc-stars"><span class="star">⭐</span><span class="star">⭐</span><span class="star">⭐</span><span class="star">⭐</span><span class="star">⭐</span><span class="score">4.9</span></div></div>
+            </div>
+            <div class="gc">
+              <div class="gc-color"><div class="gc-bands"><div class="gc-band" style="background:#7C3AED;flex:2;"></div><div class="gc-band" style="background:#FCD34D;flex:1;"></div><div class="gc-band" style="background:#7C3AED;flex:2;"></div></div></div>
+              <div class="gc-info"><div class="gc-name">Muixeranga d'Alzira</div><div class="gc-loc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Alzira</div><div class="gc-stats"><div><div class="gcs-lbl">Fundada</div><div class="gcs-val">1996</div></div><div><div class="gcs-lbl">Membres</div><div class="gcs-val">140</div></div><div><div class="gcs-lbl">Premis</div><div class="gcs-val">20</div></div></div><div class="gc-stars"><span class="star">⭐</span><span class="star">⭐</span><span class="star">⭐</span><span class="star">⭐</span><span class="star">⭐</span><span class="score">4.7</span></div></div>
+            </div>
+            <div class="gc">
+              <div class="gc-color"><div class="gc-bands"><div class="gc-band" style="background:#DC2626;flex:2;"></div><div class="gc-band" style="background:#1D4ED8;flex:1;"></div><div class="gc-band" style="background:#DC2626;flex:2;"></div></div></div>
+              <div class="gc-info"><div class="gc-name">Muixeranga de Llíria</div><div class="gc-loc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Llíria</div><div class="gc-stats"><div><div class="gcs-lbl">Fundada</div><div class="gcs-val">2005</div></div><div><div class="gcs-lbl">Membres</div><div class="gcs-val">110</div></div><div><div class="gcs-lbl">Premis</div><div class="gcs-val">12</div></div></div><div class="gc-stars"><span class="star">⭐</span><span class="star">⭐</span><span class="star">⭐</span><span class="star">⭐</span><span class="star">⭐</span><span class="score">4.6</span></div></div>
+            </div>
+          </div>
+          <div class="nav">
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="nt-lbl">Inici</span></div>
+            <div class="nt active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="nt-lbl">Muixerangues</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="nt-lbl">Figures</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span class="nt-lbl">El meu perfil</span></div>
+          </div>
+        </div>
+
+        <!-- DETAIL: logo + stats + photo + history + achievements + members -->
+        <div class="screen" id="s3-detail">
+          <div class="topbar" style="padding:10px 14px 8px;">
+            <div class="topbar-back" onclick="s3('list')"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg></div>
+            <div style="font-size:16px;font-weight:700;color:#fff;">La nostra Muixeranga</div>
+          </div>
+          <div class="scroll">
+            <!-- Logo + name + stats -->
+            <div class="gd-logo">MX<span style="font-size:8px;font-weight:400;display:block;">RANGA<br>DELTA</span></div>
+            <div class="gd-name">Muixeranga d'Elx</div>
+            <div class="gd-sub">Fundada el 1995 · Elx</div>
+            <div class="gd-stats">
+              <div><div class="gds-val">87</div><div class="gds-lbl">Membres</div></div>
+              <div><div class="gds-val" style="color:var(--pr);">12</div><div class="gds-lbl">Torres</div></div>
+              <div><div class="gds-val">4</div><div class="gds-lbl">Premis</div></div>
+            </div>
+            <!-- Group photo -->
+            <div class="gd-photo">🏛️</div>
+
+            <!-- History -->
+            <div class="gd-section-hdr">La nostra història</div>
+            <div class="gd-hist">La Muixeranga d'Elx va nàixer el 1995 a la ciutat d'Elx amb l'objectiu de preservar i difondre aquesta tradició valenciana. Des d'aleshores, hem estat construint torres i formant equips que han assolit grans fites en el món de les muixerangues.</div>
+
+            <div class="gd-divider"></div>
+
+            <!-- Achievements -->
+            <div class="gd-section-hdr">Assoliments</div>
+            <div style="height:8px;"></div>
+            <div class="ach" style="background:#D97706;"><div class="ach-ic">🏆</div><div class="ach-txt"><div class="ach-t">Campions del País Valencià 2025</div><div class="ach-s">Primer lloc a la Trobada d'Alzira</div></div><div class="ach-yr">2025</div></div>
+            <div class="ach" style="background:#991B1B;margin-top:5px;"><div class="ach-ic">⭐</div><div class="ach-txt"><div class="ach-t">Torre de 9</div><div class="ach-s">Primera vegada a la història</div></div><div class="ach-yr">2024</div></div>
+            <div class="ach" style="background:#0E7490;margin-top:5px;"><div class="ach-ic">🏅</div><div class="ach-txt"><div class="ach-t">25 anys de tradició</div><div class="ach-s">Celebració del nostre aniversari</div></div><div class="ach-yr">2020</div></div>
+            <div class="ach" style="background:#1E40AF;margin-top:5px;"><div class="ach-ic">🎖️</div><div class="ach-txt"><div class="ach-t">Millor base 2023</div><div class="ach-s">Reconeixement a la millor pinya</div></div><div class="ach-yr">2023</div></div>
+
+            <div class="gd-divider" style="margin-top:14px;"></div>
+
+            <!-- Members -->
+            <div class="gd-section-hdr" style="display:flex;align-items:center;justify-content:space-between;padding-right:14px;">
+              <span>Membres de la Muixeranga</span>
+              <span style="background:var(--pl);color:var(--pr);font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;">👥 87</span>
+            </div>
+            <div style="height:6px;"></div>
+            <div class="mi"><div class="mi-av">🧑</div><div class="mi-info"><div class="mi-name">Jordi Martínez</div><div class="mi-role">Cap de muixeranga</div></div><div class="mi-right"><div class="mb mb-baix">Baix</div><div class="mi-yrs">8 anys</div></div></div>
+            <div class="mi"><div class="mi-av">👩</div><div class="mi-info"><div class="mi-name">Anna García</div><div class="mi-role">Jove de la muixeranga</div></div><div class="mi-right"><div class="mb mb-anx">Anxaneta</div><div class="mi-yrs">5 anys</div></div></div>
+            <div class="mi"><div class="mi-av">🧑</div><div class="mi-info"><div class="mi-name">Marc López</div><div class="mi-role">Muixeranguero</div></div><div class="mi-right"><div class="mb mb-seg">Segon</div><div class="mi-yrs">6 anys</div></div></div>
+            <div class="mi"><div class="mi-av">👩</div><div class="mi-info"><div class="mi-name">Laura Fernández</div><div class="mi-role">Muixeranguera</div></div><div class="mi-right"><div class="mb mb-ter">Terç</div><div class="mi-yrs">4 anys</div></div></div>
+            <div class="mi"><div class="mi-av">🧑</div><div class="mi-info"><div class="mi-name">Pere Sánchez</div><div class="mi-role">Muixeranguero</div></div><div class="mi-right"><div class="mb mb-baix">Baix</div><div class="mi-yrs">10 anys</div></div></div>
+            <div class="see-all">Veure tots els membres</div>
+          </div>
+          <div class="nav">
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="nt-lbl">Inici</span></div>
+            <div class="nt active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span class="nt-lbl">Muixerangues</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="nt-lbl">Figures</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span class="nt-lbl">El meu perfil</span></div>
+          </div>
+        </div>
+
+      </div><!-- /phone-shell -->
+    </div><!-- /wrap -->
+    <div class="pcap"><strong>Try it:</strong> tap a group card to open its detail. Scroll down through history → achievements → member list — all in one continuous screen.</div>
+  </div>
+
+  <!-- SPEC -->
+  <div class="scol">
+    <div class="ss">
+      <div class="sh">Group card — list fields</div>
+      <div class="sc"><div class="scb">
+        <div class="sr"><div class="srl">Uniform colour panel</div><div class="srv">Left side. 3 horizontal bands: shirt (top+bottom, 2/5), sash (middle, 1/5), trousers (bottom, 2/5). Proportions fixed.</div></div>
+        <div class="sr"><div class="srl">Group name</div><div class="srv">Bold, 1 line, truncated with ellipsis if too long.</div></div>
+        <div class="sr"><div class="srl">Location</div><div class="srv">Pin icon + city. 1 line.</div></div>
+        <div class="sr"><div class="srl">Stats row</div><div class="srv">3 columns: Fundada (year) · Membres (count) · Premis (count). Label small above, value bold below.</div></div>
+        <div class="sr"><div class="srl">Star rating</div><div class="srv">5 stars + decimal score (e.g. 4.8). Shown below stats.</div></div>
+        <div class="sr"><div class="srl">Filters</div><div class="srv">Horizontal scrollable chip row above list. Active chip = red. "Totes" selected by default.</div></div>
+      </div></div>
+    </div>
+
+    <div class="ss">
+      <div class="sh">Group detail — scroll order</div>
+      <div class="layout-diagram">
+        <div class="ld-row"><div class="ld-num">1</div><div class="ld-label">Logo + name + subtitle</div><div class="ld-note">Circular logo · name · "Fundada YYYY · City"</div></div>
+        <div class="ld-row"><div class="ld-num">2</div><div class="ld-label">Stats bar</div><div class="ld-note">Membres · Torres · Premis — separated by border</div></div>
+        <div class="ld-row"><div class="ld-num">3</div><div class="ld-label">Group photo</div><div class="ld-note">Full-width rounded image, 90px tall</div></div>
+        <div class="ld-row"><div class="ld-num">4</div><div class="ld-label">La nostra història</div><div class="ld-note">Free text. Scrolls if long</div></div>
+        <div class="ld-row"><div class="ld-num">5</div><div class="ld-label">Assoliments</div><div class="ld-note">Coloured achievement cards. Newest first</div></div>
+        <div class="ld-row"><div class="ld-num">6</div><div class="ld-label">Membres de la Muixeranga</div><div class="ld-note">Member rows with role badge + seniority. "Veure tots" button at bottom</div></div>
+      </div>
+      <div class="sc"><div class="scb">
+        <div class="sr"><div class="srl">Navigation</div><div class="srv">All sections in a single scrollable screen. No tabs. No pagination. Continuous scroll from top to bottom.</div></div>
+        <div class="sr"><div class="srl">Back action</div><div class="srv">Back arrow in top bar returns to the group list.</div></div>
+      </div></div>
+    </div>
+
+    <div class="ss">
+      <div class="sh">Access rules</div>
+      <div class="sc" style="overflow:hidden;">
+        <table class="atbl">
+          <thead><tr><th>Content</th><th>Own group</th><th>Other group</th></tr></thead>
+          <tbody>
+            <tr><td>Logo, name, stats</td><td class="chk">✓</td><td class="chk">✓</td></tr>
+            <tr><td>Group photo</td><td class="chk">✓</td><td class="chk">✓</td></tr>
+            <tr><td>History text</td><td class="chk">✓</td><td class="chk">✓</td></tr>
+            <tr><td>Achievements</td><td class="chk">✓</td><td class="chk">✓</td></tr>
+            <tr><td>Member list</td><td class="chk">✓ Full list</td><td class="crs">✕ Hidden</td></tr>
+            <tr><td>Edit group info</td><td>Mestre only</td><td class="crs">✕</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="ss">
+      <div class="sh">Member list — row fields</div>
+      <div class="sc"><div class="scb">
+        <div class="sr"><div class="srl">Avatar</div><div class="srv">Profile photo or emoji placeholder. 36×36px circle.</div></div>
+        <div class="sr"><div class="srl">Name + role title</div><div class="srv">Full name bold. Role/title below in grey (e.g. "Cap de muixeranga").</div></div>
+        <div class="sr"><div class="srl">Position badge</div><div class="srv">Coloured pill right. Baix (pink) · Anxaneta (amber) · Segon (purple) · Terç (blue) · Dosos (green) · Pinya (orange).</div></div>
+        <div class="sr"><div class="srl">Seniority</div><div class="srv">"N anys" below badge. Years in the group.</div></div>
+        <div class="sr"><div class="srl">"Veure tots" button</div><div class="srv">Outline button at end of preview list. Opens full member screen.</div></div>
+      </div></div>
+      <div class="rb-grid">
+        <div class="rb-item"><div class="rb-dot" style="background:#E91E8C;"></div>Baix</div>
+        <div class="rb-item"><div class="rb-dot" style="background:#F59E0B;"></div>Anxaneta</div>
+        <div class="rb-item"><div class="rb-dot" style="background:#7C3AED;"></div>Segon</div>
+        <div class="rb-item"><div class="rb-dot" style="background:#2563EB;"></div>Terç</div>
+        <div class="rb-item"><div class="rb-dot" style="background:#059669;"></div>Dosos</div>
+        <div class="rb-item"><div class="rb-dot" style="background:#C2410C;"></div>Pinya</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- EDGE CASES -->
+<div class="es">
+  <div class="et">Edge cases</div>
+  <div class="esu">Behaviour rules for boundary scenarios.</div>
+  <div class="eg">
+    <div class="ec"><div class="ech">No search results</div><div class="ecb">Empty state: "No s'ha trobat cap muixeranga amb «[text]»." Filter chips remain visible.</div></div>
+    <div class="ec"><div class="ech">Unknown founding year</div><div class="ecb">Fundada stat hidden entirely. No dash or placeholder shown.</div></div>
+    <div class="ec"><div class="ech">Identical uniform colours</div><div class="ecb">1px separator line at 20% black between same-colour bands to keep 3 zones readable.</div></div>
+    <div class="ec"><div class="ech">No achievements yet</div><div class="ecb">Section title shown; empty state inside: "No achievements recorded yet."</div></div>
+    <div class="ec"><div class="ech">Member list on other group</div><div class="ecb">The Membres section is hidden entirely — section title and all rows absent.</div></div>
+    <div class="ec"><div class="ech">Very long history text</div><div class="ecb">Text wraps and scrolls naturally within the single-screen detail. No "read more" truncation.</div></div>
+  </div>
+</div>
+
+</div><!-- /page -->
+<script>
+function s3(n){
+  ['s3-list','s3-detail'].forEach(id=>document.getElementById(id).classList.remove('active'));
+  document.getElementById('s3-'+n).classList.add('active');
+  document.querySelectorAll('.ptbtn').forEach((b,i)=>b.classList.toggle('active',i===(n==='list'?0:1)));
+}
+</script>
+</body>
+</html>

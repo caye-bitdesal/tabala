@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Tabala — Spec: Attendance & Photos</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{--pr:#B91C3C;--pl:#FDECEA;--bg:#F3F4F6;--sur:#fff;--bor:#E5E7EB;--t1:#111827;--t2:#6B7280;--t3:#9CA3AF;--gn:#166534;--gnb:#DCFCE7;--gnbd:#BBF7D0;}
+body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--t1);line-height:1.5;}
+.page{max-width:1280px;margin:0 auto;padding:2.5rem 2rem 5rem;}
+.ph{margin-bottom:2rem;padding-bottom:1.25rem;border-bottom:1px solid var(--bor);}
+.ey{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--t3);font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.ey::before{content:'';display:block;width:18px;height:2px;background:var(--pr);}
+.ptitle{font-size:28px;font-weight:700;letter-spacing:-.4px;margin-bottom:4px;}
+.psub{font-size:13px;color:var(--t2);max-width:620px;}
+.bgs{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+.bdg{display:inline-flex;align-items:center;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;}
+.bp{background:var(--pl);color:var(--pr);border:1px solid #F9A8B8;}.bn{background:var(--sur);color:var(--t2);border:1px solid var(--bor);}.bg{background:var(--gnb);color:var(--gn);border:1px solid var(--gnbd);}
+.main{display:grid;grid-template-columns:430px 1fr;gap:3rem;align-items:start;}
+@media(max-width:960px){.main{grid-template-columns:1fr;}}
+/* PHONE SHELL */
+.phone-col{display:flex;flex-direction:column;align-items:center;gap:12px;position:sticky;top:1.5rem;}
+.ptoggle{display:flex;gap:4px;width:390px;}
+.ptbtn{flex:1;font-size:11px;font-weight:600;padding:6px 8px;border-radius:8px;border:1px solid var(--bor);background:var(--sur);color:var(--t2);cursor:pointer;text-align:center;transition:all .15s;}
+.ptbtn.active{background:var(--pr);color:#fff;border-color:var(--pr);}
+.pcap{font-size:11px;color:var(--t3);text-align:center;max-width:380px;line-height:1.5;}
+.pcap strong{color:var(--t2);}
+.phone-shell-wrap{position:relative;display:inline-block;}
+.phone-shell-wrap::before{content:'';position:absolute;right:-13px;top:130px;width:5px;height:55px;background:#222;border-radius:0 3px 3px 0;box-shadow:0 65px 0 #222;}
+.phone-shell-wrap::after{content:'';position:absolute;left:-13px;top:160px;width:5px;height:48px;background:#222;border-radius:3px 0 0 3px;}
+.phone-shell{width:390px;height:780px;background:#fff;border:10px solid #1a1a1a;border-radius:44px;box-shadow:0 0 0 1.5px #333,inset 0 0 0 1px #2a2a2a,0 24px 60px rgba(0,0,0,.4);overflow:hidden;display:flex;flex-direction:column;}
+.status-bar{background:#111;height:38px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+.status-bar::after{content:'';width:12px;height:12px;border-radius:50%;background:#000;border:2px solid #1a1a1a;}
+.screen{display:none;flex-direction:column;width:100%;flex:1;min-height:0;}
+.screen.active{display:flex;}
+.scroll{flex:1;overflow-y:auto;scrollbar-width:none;}
+.scroll::-webkit-scrollbar{display:none;}
+/* APP UI */
+.topbar{background:var(--pr);padding:12px 16px 10px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.tb-back{display:flex;align-items:center;gap:6px;color:#fff;font-size:14px;font-weight:600;flex:1;}
+.tb-back svg{width:20px;height:20px;}
+.hero{width:100%;height:160px;background:linear-gradient(135deg,#1e1b4b,#374151);display:flex;align-items:center;justify-content:center;font-size:48px;flex-shrink:0;}
+.body{padding:14px 16px;}
+.tr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;}
+.title{font-size:20px;font-weight:700;line-height:1.25;flex:1;}
+.cbadge{background:var(--gnb);color:var(--gn);border:1px solid var(--gnbd);font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;margin-left:8px;margin-top:3px;}
+.mr{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--t2);margin-bottom:5px;}
+.mr svg{width:14px;height:14px;color:var(--t3);}
+.conf{font-size:13px;color:var(--pr);font-weight:700;display:flex;align-items:center;gap:5px;margin-bottom:10px;}
+.div{height:.5px;background:var(--bor);margin:10px 0;}
+.desc{font-size:13px;color:var(--t2);line-height:1.6;margin-bottom:14px;}
+.cta{display:block;width:100%;background:var(--gn);color:#fff;font-size:14px;font-weight:700;text-align:center;padding:13px;border-radius:12px;border:none;cursor:pointer;font-family:'Outfit',sans-serif;margin-bottom:16px;}
+.gal-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.gal-t{font-size:16px;font-weight:700;}
+.gal-add{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--pr);font-weight:600;border:1px solid var(--pr);border-radius:7px;padding:4px 10px;}
+.gal-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;}
+.gp{aspect-ratio:1;border-radius:8px;background:#374151;display:flex;align-items:center;justify-content:center;font-size:28px;}
+.locked{margin-top:10px;background:#F9FAFB;border:1px solid var(--bor);border-radius:10px;padding:12px;font-size:12px;color:var(--t3);text-align:center;}
+.nav{border-top:.5px solid var(--bor);display:flex;background:#fff;flex-shrink:0;}
+.nt{flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 4px 10px;gap:2px;}
+.nt svg{width:22px;height:22px;color:var(--t3);}
+.nt.active svg{color:var(--pr);}
+.nt-lbl{font-size:10px;color:var(--t3);font-weight:500;}
+.nt.active .nt-lbl{color:var(--pr);font-weight:700;}
+/* SPEC */
+.scol{}
+.ss{margin-bottom:1.75rem;}
+.sh{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--t3);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.sh::after{content:'';flex:1;height:1px;background:var(--bor);}
+.sc{background:var(--sur);border:1px solid var(--bor);border-radius:12px;overflow:hidden;margin-bottom:8px;}
+.sch{padding:10px 14px;border-bottom:1px solid var(--bor);background:#FAFAFA;font-size:12px;font-weight:700;}
+.scb{padding:12px 14px;}
+.sr{display:flex;gap:10px;font-size:12px;padding:7px 0;border-bottom:.5px solid #F3F4F6;}
+.sr:last-child{border-bottom:none;padding-bottom:0;}
+.srl{font-weight:600;color:var(--t1);min-width:150px;flex-shrink:0;}
+.srv{color:var(--t2);flex:1;line-height:1.5;}
+.srv code{font-family:monospace;font-size:10px;background:#F3F4F6;padding:1px 4px;border-radius:3px;}
+.st-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
+.stc{border-radius:10px;padding:10px 12px;border:1px solid;}
+.stc.y{background:var(--gnb);border-color:var(--gnbd);}
+.stc.n{background:#F9FAFB;border-color:var(--bor);}
+.stl{font-size:12px;font-weight:700;margin-bottom:3px;}
+.stc.y .stl{color:var(--gn);}.stc.n .stl{color:var(--t2);}
+.std{font-size:11px;color:var(--t2);line-height:1.4;}
+.fc{background:var(--sur);border:1px solid var(--bor);border-radius:12px;overflow:hidden;margin-bottom:8px;}
+.fs{display:flex;gap:12px;padding:10px 14px;border-bottom:.5px solid var(--bor);}
+.fs:last-child{border-bottom:none;}
+.fn{width:22px;height:22px;border-radius:50%;background:var(--pl);color:var(--pr);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;}
+.ft{font-size:12px;font-weight:700;color:var(--t1);margin-bottom:2px;}
+.fd{font-size:11px;color:var(--t2);line-height:1.5;}
+.fd code{font-family:monospace;font-size:10px;background:#F3F4F6;padding:1px 4px;border-radius:3px;}
+.es{margin-top:2rem;padding-top:1.75rem;border-top:1px solid var(--bor);}
+.et{font-size:16px;font-weight:700;letter-spacing:-.2px;margin-bottom:4px;}
+.esu{font-size:12px;color:var(--t2);margin-bottom:1rem;}
+.eg{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;}
+.ec{background:var(--sur);border:1px solid var(--bor);border-radius:11px;overflow:hidden;}
+.ech{padding:8px 12px;background:#FAFAFA;border-bottom:1px solid var(--bor);font-size:11px;font-weight:700;}
+.ecb{padding:10px 12px;font-size:11px;color:var(--t2);line-height:1.5;}
+</style>
+</head>
+<body>
+<div class="page">
+<div class="ph">
+  <div class="ey">Tabala · Specification</div>
+  <div class="ptitle">Section 2 — Attendance & Photos</div>
+  <div class="psub">After an event passes, attendance is registered automatically from RSVP. Only members who attended can add photos; all members can view the gallery.</div>
+  <div class="bgs">
+    <span class="bdg bp">Screen: Event Detail (past)</span>
+    <span class="bdg bg">Auto attendance from RSVP=Yes</span>
+    <span class="bdg bn">Photos: attended members only</span>
+    <span class="bdg bn">Direct publish · No moderation</span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="phone-col">
+    <div class="ptoggle">
+      <div class="ptbtn active" onclick="sw('att')">Attended</div>
+      <div class="ptbtn" onclick="sw('noatt')">Not attended</div>
+    </div>
+    <div class="phone-shell-wrap">
+      <div class="phone-shell">
+        <div class="status-bar"></div>
+
+        <!-- ATTENDED -->
+        <div class="screen active" id="s-att">
+          <div class="topbar">
+            <div class="tb-back"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>Detalls de l'esdeveniment</div>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          </div>
+          <div class="scroll">
+            <div class="hero">🎉</div>
+            <div class="body">
+              <div class="tr"><div class="title">Festa Major de Sueca</div><div class="cbadge">Confirmada</div></div>
+              <div class="mr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Plaça Major, Sueca</div>
+              <div class="mr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>15 Set 2024 · 18:00</div>
+              <div class="conf"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>45 muixeranguers confirmats</div>
+              <div class="div"></div>
+              <div class="desc">Gran celebració de la Festa Major amb actuació completa de la muixeranga. Construirem diverses torres i figures tradicionals al llarg de la vesprada.</div>
+              <button class="cta">Confirmar Assistència</button>
+              <div class="gal-hdr">
+                <div class="gal-t">Galeria de fotos</div>
+                <div class="gal-add"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>Afegir</div>
+              </div>
+              <div class="gal-grid">
+                <div class="gp">🎭</div><div class="gp" style="background:#1f2937;">👥</div>
+                <div class="gp" style="background:#111827;">🌃</div><div class="gp" style="background:#4b5563;">🔥</div>
+                <div class="gp">🎊</div><div class="gp" style="background:#1f2937;">📸</div>
+              </div>
+            </div>
+          </div>
+          <div class="nav">
+            <div class="nt active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="nt-lbl">Inici</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span class="nt-lbl">Muixerangues</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="nt-lbl">Figures</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span class="nt-lbl">El meu perfil</span></div>
+          </div>
+        </div>
+
+        <!-- NOT ATTENDED -->
+        <div class="screen" id="s-noatt">
+          <div class="topbar">
+            <div class="tb-back"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>Detalls de l'esdeveniment</div>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          </div>
+          <div class="scroll">
+            <div class="hero">🎉</div>
+            <div class="body">
+              <div class="tr"><div class="title">Festa Major de Sueca</div></div>
+              <div class="mr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Plaça Major, Sueca</div>
+              <div class="mr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>15 Set 2024 · 18:00</div>
+              <div class="conf"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>45 muixeranguers confirmats</div>
+              <div class="div"></div>
+              <div class="desc">Gran celebració de la Festa Major amb actuació completa de la muixeranga. Construirem diverses torres i figures tradicionals al llarg de la vesprada.</div>
+              <div class="gal-hdr"><div class="gal-t">Galeria de fotos</div></div>
+              <div class="gal-grid">
+                <div class="gp">🎭</div><div class="gp" style="background:#1f2937;">👥</div>
+                <div class="gp" style="background:#111827;">🌃</div><div class="gp" style="background:#4b5563;">🔥</div>
+              </div>
+              <div class="locked">🔒 Only members who attended can add photos</div>
+            </div>
+          </div>
+          <div class="nav">
+            <div class="nt active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="nt-lbl">Inici</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span class="nt-lbl">Muixerangues</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="nt-lbl">Figures</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span class="nt-lbl">El meu perfil</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="pcap"><strong>Try it:</strong> toggle between Attended and Not Attended to see the gallery access difference.</div>
+  </div>
+
+  <div class="scol">
+    <div class="ss">
+      <div class="sh">Automatic attendance registration</div>
+      <div class="st-grid">
+        <div class="stc y"><div class="stl">✓ Attended</div><div class="std">RSVP was Confirmed. "Afegir" button visible in gallery. Counted in past event stats.</div></div>
+        <div class="stc n"><div class="stl">✕ Not attended</div><div class="std">RSVP ≠ Confirmed or no response. Can view gallery, cannot upload photos.</div></div>
+      </div>
+      <div class="sc"><div class="scb">
+        <div class="sr"><div class="srl">Trigger</div><div class="srv">Registered automatically when the event date/time passes. No manual action required.</div></div>
+        <div class="sr"><div class="srl">Rule</div><div class="srv"><code>RSVP = Confirmed</code> → attended. <code>No / no response</code> → not attended. Final, not correctable.</div></div>
+        <div class="sr"><div class="srl">Mestre exception</div><div class="srv">Mestre can add photos regardless of their own RSVP status.</div></div>
+      </div></div>
+    </div>
+    <div class="ss">
+      <div class="sh">Photo upload flow</div>
+      <div class="fc">
+        <div class="fs"><div class="fn">1</div><div><div class="ft">Tap "Afegir"</div><div class="fd">Visible only to members with attendance registered. Button appears in gallery header.</div></div></div>
+        <div class="fs"><div class="fn">2</div><div><div class="ft">Native Android PhotoPicker</div><div class="fd">Multi-select. Max <code>10 MB</code> per photo. No cap on number of photos per session.</div></div></div>
+        <div class="fs"><div class="fn">3</div><div><div class="ft">Preview & confirm</div><div class="fd">Thumbnails shown. "Pujar [N] fotos" confirm button. Upload runs in background.</div></div></div>
+        <div class="fs"><div class="fn">4</div><div><div class="ft">Direct publish</div><div class="fd">Photos appear instantly. No moderation queue. Group members receive a push notification.</div></div></div>
+      </div>
+    </div>
+    <div class="ss">
+      <div class="sh">Gallery behaviour</div>
+      <div class="sc"><div class="scb">
+        <div class="sr"><div class="srl">Layout</div><div class="srv">2-column grid, square 1:1 thumbnails, rounded corners.</div></div>
+        <div class="sr"><div class="srl">Ordering</div><div class="srv">Most recently added first.</div></div>
+        <div class="sr"><div class="srl">Viewer</div><div class="srv">Tap → full-screen. Swipe left/right to navigate. Shows uploader name + upload date.</div></div>
+        <div class="sr"><div class="srl">Download</div><div class="srv">Download to device available from viewer for all members.</div></div>
+        <div class="sr"><div class="srl">Delete</div><div class="srv">Members can delete own photos. Mestre can delete any photo.</div></div>
+      </div></div>
+    </div>
+  </div>
+</div>
+
+<div class="es">
+  <div class="et">Edge cases</div>
+  <div class="esu">Behaviour rules for boundary scenarios.</div>
+  <div class="eg">
+    <div class="ec"><div class="ech">No photos yet</div><div class="ecb">Empty state + "No photos." If attended: "Be the first to add photos" CTA shown.</div></div>
+    <div class="ec"><div class="ech">Photo over 10 MB</div><div class="ecb">Error per oversized file. Other selected photos continue uploading normally.</div></div>
+    <div class="ec"><div class="ech">Upload failure</div><div class="ecb">Auto-retry ×3. Toast with "Retry" if it persists. Successful uploads unaffected.</div></div>
+    <div class="ec"><div class="ech">App closed at transition</div><div class="ecb">Server registers attendance. On next open, event shows as past with attendance already set.</div></div>
+  </div>
+</div>
+</div>
+<script>
+function sw(n){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('s-'+n).classList.add('active');
+  document.querySelectorAll('.ptbtn').forEach((b,i)=>b.classList.toggle('active',i===(n==='att'?0:1)));
+}
+</script>
+</body>
+</html>

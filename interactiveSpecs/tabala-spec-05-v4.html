@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Tabala — Spec: Figure Planner</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --pr:#B91C3C;--pl:#FDECEA;--bg:#F3F4F6;--sur:#fff;--bor:#E5E7EB;
+  --t1:#111827;--t2:#6B7280;--t3:#9CA3AF;
+  --gn:#166534;--gnb:#DCFCE7;
+  --rb:#E91E8C;--ra:#00BCD4;--rx:#9C27B0;--rc:#FF9800;--rf:#8B1226;--rm:#4CAF50;
+}
+body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--t1);line-height:1.5;}
+.page{max-width:1280px;margin:0 auto;padding:2.5rem 2rem 5rem;}
+.ph{margin-bottom:2rem;padding-bottom:1.25rem;border-bottom:1px solid var(--bor);}
+.ey{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--t3);font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.ey::before{content:'';display:block;width:18px;height:2px;background:var(--pr);}
+.ptitle{font-size:28px;font-weight:700;letter-spacing:-.4px;margin-bottom:4px;}
+.psub{font-size:13px;color:var(--t2);max-width:640px;}
+.bgs{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+.bdg{display:inline-flex;align-items:center;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;}
+.bp{background:var(--pl);color:var(--pr);border:1px solid #F9A8B8;}
+.bn{background:var(--sur);color:var(--t2);border:1px solid var(--bor);}
+.ba{background:#FFFBEB;color:#92400E;border:1px solid #FDE68A;}
+.bb{background:#EFF6FF;color:#1E40AF;border:1px solid #BFDBFE;}
+.main{display:grid;grid-template-columns:430px 1fr;gap:3rem;align-items:start;}
+@media(max-width:960px){.main{grid-template-columns:1fr;}}
+
+/* PHONE SHELL */
+.phone-col{display:flex;flex-direction:column;align-items:center;gap:12px;position:sticky;top:1.5rem;}
+.ptoggle{display:flex;gap:4px;width:390px;flex-wrap:wrap;}
+.ptbtn{flex:1;font-size:11px;font-weight:600;padding:6px 8px;border-radius:8px;border:1px solid var(--bor);background:var(--sur);color:var(--t2);cursor:pointer;text-align:center;transition:all .15s;white-space:nowrap;}
+.ptbtn.active{background:var(--pr);color:#fff;border-color:var(--pr);}
+.pcap{font-size:11px;color:var(--t3);text-align:center;max-width:380px;line-height:1.5;}
+.pcap strong{color:var(--t2);}
+.phone-shell-wrap{position:relative;display:inline-block;}
+.phone-shell-wrap::before{content:'';position:absolute;right:-13px;top:130px;width:5px;height:55px;background:#222;border-radius:0 3px 3px 0;box-shadow:0 65px 0 #222;}
+.phone-shell-wrap::after{content:'';position:absolute;left:-13px;top:160px;width:5px;height:48px;background:#222;border-radius:3px 0 0 3px;}
+.phone-shell{width:390px;height:780px;background:#fff;border:10px solid #1a1a1a;border-radius:44px;box-shadow:0 0 0 1.5px #333,inset 0 0 0 1px #2a2a2a,0 24px 60px rgba(0,0,0,.4);overflow:hidden;display:flex;flex-direction:column;}
+.status-bar{background:#111;height:38px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+.status-bar::after{content:'';width:12px;height:12px;border-radius:50%;background:#000;border:2px solid #1a1a1a;}
+.screen{display:none;flex-direction:column;width:100%;flex:1;min-height:0;}
+.screen.active{display:flex;}
+.scroll{flex:1;overflow-y:auto;scrollbar-width:none;}
+.scroll::-webkit-scrollbar{display:none;}
+
+/* APP CHROME */
+.topbar{background:var(--pr);padding:12px 16px 10px;display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.tb-icon{width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.tb-title{font-size:16px;font-weight:700;color:#fff;flex:1;}
+.tb-sub{font-size:10px;color:rgba(255,255,255,.7);}
+.tb-back{display:flex;align-items:center;gap:6px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;}
+.tb-back svg{width:20px;height:20px;}
+.tb-actions{display:flex;gap:8px;margin-left:auto;}
+.tb-actions svg{width:20px;height:20px;color:#fff;}
+.nav{border-top:.5px solid var(--bor);display:flex;background:#fff;flex-shrink:0;}
+.nt{flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 4px 10px;gap:2px;}
+.nt svg{width:22px;height:22px;color:var(--t3);}
+.nt.active svg{color:var(--pr);}
+.nt-lbl{font-size:10px;color:var(--t3);font-weight:500;}
+.nt.active .nt-lbl{color:var(--pr);font-weight:700;}
+
+/* TEMPLATE LIST */
+.tpl-intro{margin:12px;background:var(--sur);border:1px solid var(--bor);border-radius:12px;padding:12px 14px;}
+.tpl-intro-t{font-size:15px;font-weight:700;margin-bottom:4px;}
+.tpl-intro-d{font-size:12px;color:var(--t2);line-height:1.5;}
+.tpl-sec{font-size:12px;font-weight:700;padding:8px 14px 4px;}
+.tpl{margin:0 12px 10px;background:var(--sur);border:1px solid var(--bor);border-radius:12px;padding:12px 14px;cursor:pointer;transition:border-color .15s;}
+.tpl:hover{border-color:var(--pr);}
+.tpl-name{font-size:15px;font-weight:700;margin-bottom:3px;}
+.tpl-desc{font-size:11px;color:var(--t2);margin-bottom:8px;}
+.tpl-roles{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px;}
+.rc{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;color:#fff;}
+.tpl-pos{font-size:10px;color:var(--t3);}
+
+/* ── VIEW TOGGLE inside figure screen ── */
+.view-toggle{display:flex;margin:10px 12px 0;background:#F3F4F6;border-radius:10px;padding:3px;gap:2px;flex-shrink:0;}
+.vt-btn{flex:1;font-size:11px;font-weight:600;padding:7px 8px;border-radius:8px;text-align:center;cursor:pointer;color:var(--t2);transition:all .15s;border:none;background:transparent;font-family:'Outfit',sans-serif;}
+.vt-btn.active{background:#fff;color:var(--pr);box-shadow:0 1px 4px rgba(0,0,0,.1);}
+
+/* ── CASTELLER VIEW (front elevation) ── */
+.casteller-area{background:#FDF9F0;border:.5px solid #EDE4CA;border-radius:10px;margin:10px 12px 0;padding:12px 8px 16px;position:relative;}
+.cast-label{font-size:8px;color:#9C8A6A;font-weight:600;letter-spacing:.05em;text-align:center;margin-bottom:10px;text-transform:uppercase;}
+/* Casteller figure: vertical stack of floors */
+.cast-floors{display:flex;flex-direction:column;align-items:center;gap:0;}
+.cast-floor{display:flex;gap:5px;justify-content:center;align-items:flex-end;margin-bottom:2px;}
+.cast-person{display:flex;flex-direction:column;align-items:center;gap:1px;}
+/* person body = colored block */
+.cast-body{border-radius:5px 5px 0 0;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;text-transform:uppercase;line-height:1.1;text-align:center;padding:2px 3px;}
+/* person legs */
+.cast-legs{width:100%;height:6px;border-radius:0 0 3px 3px;opacity:.7;}
+/* floor label */
+.cast-floor-lbl{font-size:7px;color:var(--t3);text-align:center;margin-bottom:1px;}
+
+/* AERIAL VIEW */
+.fig-area{background:#F8F5FF;border:.5px solid #E0D7F8;border-radius:10px;margin:10px 12px 0;padding:10px 8px;}
+.fig-dir{font-size:9px;color:#9C27B0;font-weight:700;text-align:right;margin-bottom:8px;letter-spacing:.04em;}
+.fig-row{display:flex;gap:5px;justify-content:center;margin-bottom:5px;}
+.fb{border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;padding:8px 4px;min-width:62px;text-align:center;line-height:1.2;cursor:pointer;text-transform:uppercase;}
+.fb.rb{background:var(--rb);}.fb.ra{background:var(--ra);}.fb.rx{background:var(--rx);}.fb.rc2{background:var(--rc);}.fb.rf{background:var(--rf);}.fb.rm{background:var(--rm);}
+
+/* SHARED: obs, resum, legend, persons */
+.obs{margin:10px 12px 0;background:var(--sur);border:1px solid var(--bor);border-radius:10px;padding:10px 12px;}
+.obs-t{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--t2);margin-bottom:5px;}
+.obs-i{font-size:12px;color:var(--pr);display:flex;gap:5px;line-height:1.5;margin-bottom:3px;}
+.obs-i::before{content:'–';}
+.resum{margin:10px 12px 0;background:var(--sur);border:1px solid var(--bor);border-radius:10px;padding:10px 12px;}
+.resum-t{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--t2);margin-bottom:8px;}
+.resum-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;}
+.rc2{border:1px solid var(--bor);border-radius:7px;padding:6px 4px;text-align:center;}
+.rc2-lbl{font-size:8px;text-transform:uppercase;letter-spacing:.03em;color:var(--t3);font-weight:600;}
+.rc2-val{font-size:18px;font-weight:700;}
+.legend{margin:10px 12px 0;background:var(--sur);border:1px solid var(--bor);border-radius:10px;padding:10px 12px;}
+.legend-t{font-size:13px;font-weight:700;margin-bottom:8px;}
+.li{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t1);margin-bottom:5px;}
+.li-dot{width:16px;height:11px;border-radius:3px;flex-shrink:0;}
+.persons{margin:10px 12px 12px;background:var(--sur);border:1px solid var(--bor);border-radius:10px;padding:10px 12px;}
+.persons-t{font-size:13px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;}
+.pi{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:.5px solid var(--bor);}
+.pi:last-child{border-bottom:none;}
+.pi-drag{color:var(--t3);font-size:16px;cursor:grab;}
+.pi-name{font-size:13px;color:var(--t1);font-weight:500;}
+
+/* SPEC SIDE */
+.scol{} .ss{margin-bottom:1.75rem;}
+.sh{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--t3);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.sh::after{content:'';flex:1;height:1px;background:var(--bor);}
+.sc{background:var(--sur);border:1px solid var(--bor);border-radius:12px;overflow:hidden;margin-bottom:8px;}
+.sch{padding:10px 14px;border-bottom:1px solid var(--bor);background:#FAFAFA;font-size:12px;font-weight:700;}
+.scs{font-size:10px;color:var(--t3);margin-top:1px;}
+.scb{padding:12px 14px;}
+.sr{display:flex;gap:10px;font-size:12px;padding:7px 0;border-bottom:.5px solid #F3F4F6;}
+.sr:last-child{border-bottom:none;padding-bottom:0;}
+.srl{font-weight:600;color:var(--t1);min-width:160px;flex-shrink:0;}
+.srv{color:var(--t2);flex:1;line-height:1.5;}
+.srv code{font-family:monospace;font-size:10px;background:#F3F4F6;padding:1px 4px;border-radius:3px;}
+.fc{background:var(--sur);border:1px solid var(--bor);border-radius:12px;overflow:hidden;margin-bottom:8px;}
+.fs{display:flex;gap:12px;padding:10px 14px;border-bottom:.5px solid var(--bor);}
+.fs:last-child{border-bottom:none;}
+.fn{width:22px;height:22px;border-radius:50%;background:#FFFBEB;color:#92400E;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;border:1px solid #FDE68A;}
+.ft{font-size:12px;font-weight:700;color:var(--t1);margin-bottom:2px;}
+.fd{font-size:11px;color:var(--t2);line-height:1.5;}
+.fd code{font-family:monospace;font-size:10px;background:#F3F4F6;padding:1px 4px;border-radius:3px;}
+.roles-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.ri{display:flex;align-items:center;gap:8px;background:var(--sur);border:1px solid var(--bor);border-radius:8px;padding:7px 10px;font-size:12px;}
+.ri-dot{width:14px;height:14px;border-radius:3px;flex-shrink:0;}
+.note{background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:10px 14px;font-size:12px;color:#1E40AF;line-height:1.55;margin-bottom:8px;}
+.rsw{display:flex;gap:6px;margin-bottom:1.25rem;}
+.rtab{font-size:12px;font-weight:600;padding:6px 16px;border-radius:20px;border:1px solid var(--bor);background:var(--sur);color:var(--t2);cursor:pointer;transition:all .15s;}
+.rtab.m.active{background:#92400E;color:#fff;border-color:#92400E;}
+.rtab.b.active{background:#1E40AF;color:#fff;border-color:#1E40AF;}
+.rpane{display:none;} .rpane.active{display:block;}
+.es{margin-top:2rem;padding-top:1.75rem;border-top:1px solid var(--bor);}
+.et{font-size:16px;font-weight:700;letter-spacing:-.2px;margin-bottom:4px;}
+.esu{font-size:12px;color:var(--t2);margin-bottom:1rem;}
+.eg{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;}
+.ec{background:var(--sur);border:1px solid var(--bor);border-radius:11px;overflow:hidden;}
+.ech{padding:8px 12px;background:#FAFAFA;border-bottom:1px solid var(--bor);font-size:11px;font-weight:700;}
+.ecb{padding:10px 12px;font-size:11px;color:var(--t2);line-height:1.5;}
+</style>
+</head>
+<body>
+<div class="page">
+<div class="ph">
+  <div class="ey">Tabala · Specification</div>
+  <div class="ptitle">Section 5 — Figure Planner</div>
+  <div class="psub">Mestre selects a template then assigns members. The figure screen has two diagram views togglable via a button: casteller (front elevation, floor by floor) and aerial (top-down / "planta"). Below the diagram: observations, summary, role legend, and the available persons list — all in one continuous scroll.</div>
+  <div class="bgs">
+    <span class="bdg bp">Screen: Figures tab</span>
+    <span class="bdg ba">Mestre: create · assign · publish</span>
+    <span class="bdg bb">Member: view own position</span>
+    <span class="bdg bn">Two diagram views: casteller + aerial</span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="phone-col">
+    <div class="ptoggle">
+      <div class="ptbtn active" onclick="sw('tpl')">Templates</div>
+      <div class="ptbtn" onclick="sw('fig')">Figure view</div>
+    </div>
+    <div class="phone-shell-wrap">
+      <div class="phone-shell">
+        <div class="status-bar"></div>
+
+        <!-- TEMPLATES -->
+        <div class="screen active" id="s-tpl">
+          <div class="topbar">
+            <div class="tb-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></div>
+            <div><div class="tb-title">Planificador de Figures</div><div class="tb-sub">Selecciona una plantilla per començar</div></div>
+          </div>
+          <div class="scroll">
+            <div class="tpl-intro"><div class="tpl-intro-t">Crea la teua figura</div><div class="tpl-intro-d">Selecciona una plantilla per planificar l'estructura. Podràs assignar persones, gestionar rols i imprimir el disseny final.</div></div>
+            <div class="tpl-sec">Plantilles disponibles</div>
+            <div class="tpl" onclick="sw('fig')">
+              <div class="tpl-name">El Margalló</div>
+              <div class="tpl-desc">Remat de Palmera amb P3 central</div>
+              <div class="tpl-roles"><div class="rc" style="background:var(--rb);">👥 7 Bases</div><div class="rc" style="background:var(--ra);">👥 3 Alçadors</div><div class="rc" style="background:var(--rx);">👥 8 Xicalla</div></div>
+              <div class="tpl-pos">14 posicions · 3 observacions</div>
+            </div>
+            <div class="tpl" onclick="sw('fig')">
+              <div class="tpl-name">Pilar Aixecat de 3</div>
+              <div class="tpl-desc">Pilar aixecat amb estructura de 3</div>
+              <div class="tpl-roles"><div class="rc" style="background:var(--rb);">👥 7 Bases</div><div class="rc" style="background:var(--ra);">👥 3 Alçadors</div><div class="rc" style="background:var(--rx);">👥 8 Xicalla</div></div>
+              <div class="tpl-pos">11 posicions · 2 observacions</div>
+            </div>
+            <div class="tpl">
+              <div class="tpl-name">Pilar de 4</div>
+              <div class="tpl-desc">Pilar de 4 altures</div>
+              <div class="tpl-roles"><div class="rc" style="background:var(--rb);">👥 4 Bases</div><div class="rc" style="background:var(--ra);">👥 3 Alçadors</div><div class="rc" style="background:var(--rx);">👥 1 Xicalla</div></div>
+              <div class="tpl-pos">8 posicions · 2 observacions</div>
+            </div>
+          </div>
+          <div class="nav">
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="nt-lbl">Inici</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span class="nt-lbl">Muixerangues</span></div>
+            <div class="nt active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="nt-lbl">Figures</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span class="nt-lbl">El meu perfil</span></div>
+          </div>
+        </div>
+
+        <!-- FIGURE VIEW: toggle + diagram + obs + resum + legend + persons (all in one scroll) -->
+        <div class="screen" id="s-fig">
+          <div class="topbar" style="padding:10px 14px 8px;">
+            <div class="tb-back" onclick="sw('tpl')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg></div>
+            <div style="flex:1;"><div class="tb-title" style="font-size:15px;">Pilar Aixecat de 3</div><div class="tb-sub">Pilar aixecat amb estructura de 3</div></div>
+            <div class="tb-actions">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+          </div>
+
+          <!-- DIAGRAM VIEW TOGGLE -->
+          <div class="view-toggle" id="view-toggle">
+            <button class="vt-btn active" id="vt-casteller" onclick="setView('casteller')">Vista Casteller</button>
+            <button class="vt-btn" id="vt-aeria" onclick="setView('aeria')">Vista Aèria</button>
+          </div>
+
+          <div class="scroll" id="fig-scroll">
+
+            <!-- CASTELLER VIEW (front elevation) -->
+            <div id="view-casteller">
+              <div class="casteller-area">
+                <div class="cast-label">Vista de front (casteller)</div>
+                <div class="cast-floors">
+                  <!-- Àngel / top -->
+                  <div style="font-size:8px;color:var(--t3);margin-bottom:3px;text-align:center;">Àngel</div>
+                  <div class="cast-floor">
+                    <div class="cast-person">
+                      <div class="cast-body" style="background:var(--rx);width:48px;height:32px;font-size:8px;">XICALLA</div>
+                      <div class="cast-legs" style="background:var(--rx);width:48px;"></div>
+                    </div>
+                  </div>
+                  <!-- Pis 3 -->
+                  <div style="font-size:8px;color:var(--t3);margin:5px 0 3px;text-align:center;">3r pis</div>
+                  <div class="cast-floor">
+                    <div class="cast-person">
+                      <div class="cast-body" style="background:var(--rm);width:48px;height:36px;font-size:7px;">DANI T.</div>
+                      <div class="cast-legs" style="background:var(--rm);width:48px;"></div>
+                    </div>
+                  </div>
+                  <!-- Pis 2 -->
+                  <div style="font-size:8px;color:var(--t3);margin:5px 0 3px;text-align:center;">2n pis</div>
+                  <div class="cast-floor">
+                    <div class="cast-person">
+                      <div class="cast-body" style="background:var(--rc);width:52px;height:38px;font-size:7px;">CAYE</div>
+                      <div class="cast-legs" style="background:var(--rc);width:52px;"></div>
+                    </div>
+                    <div class="cast-person">
+                      <div class="cast-body" style="background:var(--ra);width:52px;height:38px;font-size:7px;">SARA</div>
+                      <div class="cast-legs" style="background:var(--ra);width:52px;"></div>
+                    </div>
+                  </div>
+                  <!-- Pis 1 -->
+                  <div style="font-size:8px;color:var(--t3);margin:5px 0 3px;text-align:center;">1r pis</div>
+                  <div class="cast-floor">
+                    <div class="cast-person">
+                      <div class="cast-body" style="background:var(--rf);width:52px;height:40px;font-size:7px;">ANDREA</div>
+                      <div class="cast-legs" style="background:var(--rf);width:52px;"></div>
+                    </div>
+                    <div class="cast-person">
+                      <div class="cast-body" style="background:var(--ra);width:52px;height:40px;font-size:7px;">TONI</div>
+                      <div class="cast-legs" style="background:var(--ra);width:52px;"></div>
+                    </div>
+                    <div class="cast-person">
+                      <div class="cast-body" style="background:var(--rf);width:52px;height:40px;font-size:7px;opacity:.6;">JER…</div>
+                      <div class="cast-legs" style="background:var(--rf);width:52px;opacity:.6;"></div>
+                    </div>
+                  </div>
+                  <!-- Base / pinya -->
+                  <div style="font-size:8px;color:var(--t3);margin:5px 0 3px;text-align:center;">Base / Pinya</div>
+                  <div class="cast-floor">
+                    <div class="cast-person">
+                      <div class="cast-body" style="background:var(--rb);width:44px;height:42px;font-size:7px;">FRAN</div>
+                      <div class="cast-legs" style="background:var(--rb);width:44px;"></div>
+                    </div>
+                    <div class="cast-person">
+                      <div class="cast-body" style="background:var(--ra);width:44px;height:42px;font-size:7px;">SÒNIA</div>
+                      <div class="cast-legs" style="background:var(--ra);width:44px;"></div>
+                    </div>
+                    <div class="cast-person">
+                      <div class="cast-body" style="background:var(--rc);width:44px;height:42px;font-size:7px;">SAMU</div>
+                      <div class="cast-legs" style="background:var(--rc);width:44px;"></div>
+                    </div>
+                    <div class="cast-person">
+                      <div class="cast-body" style="background:var(--rf);width:44px;height:42px;font-size:7px;opacity:.6;">VICT…</div>
+                      <div class="cast-legs" style="background:var(--rf);width:44px;opacity:.6;"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- AERIAL VIEW (top-down) -->
+            <div id="view-aeria" style="display:none;">
+              <div class="fig-area">
+                <div class="fig-dir">MIRA CAP ACÍ ↑</div>
+                <div class="fig-row"><div class="fb rc2">SAMU</div></div>
+                <div class="fig-row"><div class="fb rf">ANDREA</div><div class="fb ra">TONI</div><div class="fb rf" style="opacity:.55;">JER…</div></div>
+                <div class="fig-row"><div class="fb rf">FRAN</div><div class="fb ra">SÒNIA</div><div class="fb rf" style="opacity:.55;">VICT…</div></div>
+                <div class="fig-row"><div class="fb ra">SARA</div></div>
+                <div class="fig-row"><div class="fb rc2">CAYE</div></div>
+                <div class="fig-row"><div class="fb rm" style="min-width:130px;">DANI T. (passa xicalla)</div></div>
+                <div class="fig-row"><div class="fb rx">XICALLA</div></div>
+              </div>
+            </div>
+
+            <!-- OBSERVATIONS (always visible) -->
+            <div class="obs">
+              <div class="obs-t">OBSERVACIONS</div>
+              <div class="obs-i">La mà (de davant) canta els moviments</div>
+              <div class="obs-i">Resta de gent al voltant de la figura formant la pinya</div>
+            </div>
+
+            <!-- RESUM -->
+            <div class="resum">
+              <div class="resum-t">RESUM</div>
+              <div class="resum-grid">
+                <div class="rc2"><div class="rc2-lbl">BASES</div><div class="rc2-val">7</div></div>
+                <div class="rc2"><div class="rc2-lbl">ALÇADOR/A</div><div class="rc2-val">3</div></div>
+                <div class="rc2"><div class="rc2-lbl">MANS</div><div class="rc2-val">6</div></div>
+                <div class="rc2"><div class="rc2-lbl">XIQUET</div><div class="rc2-val">8</div></div>
+              </div>
+            </div>
+
+            <!-- LEGEND -->
+            <div class="legend">
+              <div class="legend-t">Llegenda de rols</div>
+              <div class="li"><div class="li-dot" style="background:var(--rb);"></div>Bases</div>
+              <div class="li"><div class="li-dot" style="background:var(--ra);"></div>Alçador/a</div>
+              <div class="li"><div class="li-dot" style="background:var(--rx);"></div>Xicalla / Qui corona</div>
+              <div class="li"><div class="li-dot" style="background:var(--rc);"></div>Contrafort</div>
+              <div class="li"><div class="li-dot" style="background:var(--rf);"></div>Forçuts</div>
+              <div class="li"><div class="li-dot" style="background:var(--rm);"></div>Mà (canta moviments)</div>
+            </div>
+
+            <!-- PERSONS (Mestre only, same section) -->
+            <div class="persons">
+              <div class="persons-t"><span>Persones disponibles (24/24)</span></div>
+              <div class="pi"><div class="pi-drag">⠿</div><div class="pi-name">Andrea</div></div>
+              <div class="pi"><div class="pi-drag">⠿</div><div class="pi-name">Èrika</div></div>
+              <div class="pi"><div class="pi-drag">⠿</div><div class="pi-name">Toni</div></div>
+              <div class="pi"><div class="pi-drag">⠿</div><div class="pi-name">Sara</div></div>
+              <div class="pi"><div class="pi-drag">⠿</div><div class="pi-name">Caye</div></div>
+              <div class="pi"><div class="pi-drag">⠿</div><div class="pi-name">Samu</div></div>
+            </div>
+          </div><!-- /scroll -->
+
+          <div class="nav">
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="nt-lbl">Inici</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span class="nt-lbl">Muixerangues</span></div>
+            <div class="nt active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="nt-lbl">Figures</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span class="nt-lbl">El meu perfil</span></div>
+          </div>
+        </div><!-- /s-fig -->
+
+      </div>
+    </div>
+    <div class="pcap"><strong>Try it:</strong> in "Figure view", toggle between <em>Vista Casteller</em> (floor-by-floor elevation) and <em>Vista Aèria</em> (top-down). Scroll down to see observations, summary, legend and available persons — all in one continuous section.</div>
+  </div>
+
+  <!-- SPEC -->
+  <div class="scol">
+    <div class="rsw">
+      <div class="rtab m active" onclick="sr('m')">Mestre flow</div>
+      <div class="rtab b" onclick="sr('b')">Member view</div>
+    </div>
+
+    <!-- MESTRE PANE -->
+    <div class="rpane active" id="rp-m">
+      <div class="ss">
+        <div class="sh">Template list — card fields</div>
+        <div class="sc"><div class="scb">
+          <div class="sr"><div class="srl">Template name</div><div class="srv">Bold title + short description subtitle.</div></div>
+          <div class="sr"><div class="srl">Role chips</div><div class="srv">Colour-coded pills with count per role. Same colours used system-wide in diagrams and legends.</div></div>
+          <div class="sr"><div class="srl">Position count</div><div class="srv">Total positions + number of observations for this template.</div></div>
+          <div class="sr"><div class="srl">Managed by</div><div class="srv">App administrator. Mestre selects templates but cannot create or modify them.</div></div>
+        </div></div>
+      </div>
+
+      <div class="ss">
+        <div class="sh">Diagram view toggle</div>
+        <div class="sc">
+          <div class="sch">Two views, one button — togglable above the diagram<div class="scs">The toggle persists per session; the last view selected remains active when scrolling</div></div>
+          <div class="scb">
+            <div class="sr"><div class="srl">Vista Casteller</div><div class="srv">Front elevation view. Shows the figure floor by floor as you would see it from the front. Each person is a coloured block with their name, stacked by floor (Base/Pinya → 1r pis → 2n pis → … → Àngel).</div></div>
+            <div class="sr"><div class="srl">Vista Aèria</div><div class="srv">Top-down plan view ("planta"). Shows spatial arrangement as seen from above. "MIRA CAP ACÍ ↑" label marks the front direction. Useful for understanding position relative to others.</div></div>
+            <div class="sr"><div class="srl">Toggle placement</div><div class="srv">Segmented control (pill-style) placed between the top bar and the diagram. Sticky — does not scroll away.</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ss">
+        <div class="sh">Figure screen — content order (single scroll)</div>
+        <div class="fc">
+          <div class="fs"><div class="fn">1</div><div><div class="ft">Diagram view toggle</div><div class="fd">Segmented button: "Vista Casteller" | "Vista Aèria". Fixed below the top bar.</div></div></div>
+          <div class="fs"><div class="fn">2</div><div><div class="ft">Diagram (casteller or aerial)</div><div class="fd">Switches instantly on toggle tap. Scroll position resets to top of diagram on switch.</div></div></div>
+          <div class="fs"><div class="fn">3</div><div><div class="ft">Observations (OBSERVACIONS)</div><div class="fd">Red bulleted notes from the template. Read-only for members.</div></div></div>
+          <div class="fs"><div class="fn">4</div><div><div class="ft">Summary (RESUM)</div><div class="fd">4-cell grid: Bases · Alçador/a · Mans · Xiquet. Auto-calculated from template.</div></div></div>
+          <div class="fs"><div class="fn">5</div><div><div class="ft">Role legend (Llegenda de rols)</div><div class="fd">Colour swatch + role name. Always shown to decode diagram colours.</div></div></div>
+          <div class="fs"><div class="fn">6</div><div><div class="ft">Available persons — Mestre only</div><div class="fd">Scrollable draggable list continuing below the legend. Count shows assigned/total. <strong>Not a separate section</strong> — continues the same screen after the legend.</div></div></div>
+        </div>
+      </div>
+
+      <div class="ss">
+        <div class="sh">Role colour system</div>
+        <div class="roles-grid">
+          <div class="ri"><div class="ri-dot" style="background:var(--rb);"></div>Bases (hot pink)</div>
+          <div class="ri"><div class="ri-dot" style="background:var(--ra);"></div>Alçador/a (cyan)</div>
+          <div class="ri"><div class="ri-dot" style="background:var(--rx);"></div>Xicalla (purple)</div>
+          <div class="ri"><div class="ri-dot" style="background:var(--rc);"></div>Contrafort (orange)</div>
+          <div class="ri"><div class="ri-dot" style="background:var(--rf);"></div>Forçuts (dark red)</div>
+          <div class="ri"><div class="ri-dot" style="background:var(--rm);"></div>Mà — canta (green)</div>
+        </div>
+        <div class="sc" style="margin-top:8px;"><div class="scb">
+          <div class="sr"><div class="srl">Consistency</div><div class="srv">Same colour per role in both diagram views, legend chips, template list chips and summary cells.</div></div>
+          <div class="sr"><div class="srl">Unassigned blocks</div><div class="srv">~50% opacity in both views until a person is assigned.</div></div>
+          <div class="sr"><div class="srl">Print</div><div class="srv">Printer icon in top bar. Exports the currently active diagram view as a printable PDF.</div></div>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- MEMBER PANE -->
+    <div class="rpane" id="rp-b">
+      <div class="note"><strong>Member view uses the same screen structure</strong> — both diagram views togglable, observations, summary and legend — with two differences: the <strong>available persons list is hidden</strong>, and the member's own assigned block is highlighted (brighter border/glow) in both views.</div>
+      <div class="ss">
+        <div class="sh">What a member sees</div>
+        <div class="sc"><div class="scb">
+          <div class="sr"><div class="srl">Both diagram views</div><div class="srv">Vista Casteller and Vista Aèria both available. Toggle works identically.</div></div>
+          <div class="sr"><div class="srl">Own position highlight</div><div class="srv">Member's block has a highlighted border/glow in both views. Helps identify their spot instantly.</div></div>
+          <div class="sr"><div class="srl">Observations</div><div class="srv">Same red text notes. Useful rehearsal context.</div></div>
+          <div class="sr"><div class="srl">Summary & legend</div><div class="srv">Same 4-cell grid and colour legend. Decode role colours.</div></div>
+          <div class="sr"><div class="srl">Available persons</div><div class="srv"><strong>Not shown.</strong> The persons list section is hidden from members.</div></div>
+          <div class="sr"><div class="srl">Notification</div><div class="srv">Push on assignment. Badge on Figures tab. Notification tap deep-links directly to the figure.</div></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="es">
+  <div class="et">Edge cases</div>
+  <div class="esu">Behaviour rules for boundary scenarios.</div>
+  <div class="eg">
+    <div class="ec"><div class="ech">Member RSVP = No but assigned</div><div class="ecb">Mestre can still assign. ⚠️ indicator on their block in Mestre view only.</div></div>
+    <div class="ec"><div class="ech">Member removed from group</div><div class="ecb">Auto-removed from all positions. Suplent 1 becomes titular. Mestre notified.</div></div>
+    <div class="ec"><div class="ech">Publish with empty positions</div><div class="ecb">Allowed. Empty blocks shown at ~50% opacity. No notification for unassigned positions.</div></div>
+    <div class="ec"><div class="ech">Event cancelled after publish</div><div class="ecb">All associated figures deleted. Assigned members receive a cancellation push.</div></div>
+    <div class="ec"><div class="ech">Edit after publish</div><div class="ecb">Mestre can keep editing. Each change triggers a new push to affected members.</div></div>
+    <div class="ec"><div class="ech">Print view</div><div class="ecb">The currently active diagram view (casteller or aerial) is used for the PDF export. Mestre can switch view before printing.</div></div>
+  </div>
+</div>
+
+</div>
+<script>
+function sw(n){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('s-'+n).classList.add('active');
+  document.querySelectorAll('.ptbtn').forEach((b,i)=>b.classList.toggle('active',i===(n==='tpl'?0:1)));
+}
+
+function setView(v){
+  document.getElementById('view-casteller').style.display = v==='casteller'?'':'none';
+  document.getElementById('view-aeria').style.display    = v==='aeria'?'':'none';
+  document.getElementById('vt-casteller').classList.toggle('active', v==='casteller');
+  document.getElementById('vt-aeria').classList.toggle('active',     v==='aeria');
+  // scroll diagram back to top
+  document.getElementById('fig-scroll').scrollTop=0;
+}
+
+function sr(n){
+  document.querySelectorAll('.rtab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.rpane').forEach(p=>p.classList.remove('active'));
+  document.getElementById('rp-'+n).classList.add('active');
+  document.querySelectorAll('.rtab').forEach(t=>{if(t.classList.contains(n))t.classList.add('active');});
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+schema: spec-driven
+
+# Contexto global del proyecto Bitdesal
+context: |
+  Tech Stack:
+  - Language: Kotlin (idiomatic style).
+  - UI: 100% Jetpack Compose (Material 3).
+  - Architecture: MVVM with Clean Architecture and Single Main Activity. Use UI states and state holders
+  - DI: Koin (strictly, do not use Hilt or Dagger).
+  - Persistence: Room (SQLite) for local data.
+  - Networking: Retrofit + OkHttp.
+  - Resources: XML only for strings.xml, themes.xml, and colors.xml.
+  - Navigation: We use Navigation 3 as the default navigation in the apps.
+  - Reactivity: Kotlin Coroutines and StateFlow/SharedFlow, implement lifecycle-aware components
+
+# Reglas específicas por artefacto
+rules:
+  proposal:
+    - "Every proposal MUST start with a section titled 'Assumptions to Verify'. List all architectural or logic assumptions and ask the user for confirmation."
+    - "Keep the total word count under 500 words."
+    - "Always include a 'Non-goals / Discarded' section listing what is NOT included or technical paths explicitly rejected (e.g., rejecting XML layouts)."
+    - "Summarize the business value and the technical impact briefly."
+
+  spec:
+    - "Define requirements strictly in terms of Domain Use Cases."
+    - "Include a 'Data Contract' section for any JSON metadata or API responses."
+
+  tasks:
+    - "Break down every feature/use case into exactly three subtasks:
+        1. Data Model & Persistence: Room entities, DAOs, and repository implementation.
+        2. Network Integration: API contracts, DTOs, and remote data source calls.
+        3. UI & Interaction: Jetpack Compose screen, ViewState, and ViewModel logic."
+    - "Each task must specify the layer it belongs to (Data, Domain, or UI)."
+    - "Ensure tasks are sequential to respect layer dependencies."

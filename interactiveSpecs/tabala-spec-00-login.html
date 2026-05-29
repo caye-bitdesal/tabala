@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Tabala — Spec: Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{--pr:#B91C3C;--pl:#FDECEA;--bg:#F3F4F6;--sur:#fff;--bor:#E5E7EB;--t1:#111827;--t2:#6B7280;--t3:#9CA3AF;--gn:#166534;--gnb:#DCFCE7;}
+body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--t1);line-height:1.5;}
+.page{max-width:1200px;margin:0 auto;padding:2.5rem 2rem 5rem;}
+
+/* PAGE HEADER */
+.ph{margin-bottom:2rem;padding-bottom:1.25rem;border-bottom:1px solid var(--bor);}
+.ey{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--t3);font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.ey::before{content:'';display:block;width:18px;height:2px;background:var(--pr);}
+.ptitle{font-size:28px;font-weight:700;letter-spacing:-.4px;margin-bottom:4px;}
+.psub{font-size:13px;color:var(--t2);max-width:580px;}
+.bgs{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+.bdg{display:inline-flex;align-items:center;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;}
+.bp{background:var(--pl);color:var(--pr);border:1px solid #F9A8B8;}
+.bn{background:var(--sur);color:var(--t2);border:1px solid var(--bor);}
+.bg{background:var(--gnb);color:var(--gn);border:1px solid #BBF7D0;}
+
+/* MAIN LAYOUT */
+.main{display:grid;grid-template-columns:430px 1fr;gap:3rem;align-items:start;}
+@media(max-width:960px){.main{grid-template-columns:1fr;}}
+
+/* PHONE SHELL */
+.phone-col{display:flex;flex-direction:column;align-items:center;gap:12px;position:sticky;top:1.5rem;}
+.ptoggle{display:flex;gap:4px;width:390px;}
+.ptbtn{flex:1;font-size:11px;font-weight:600;padding:6px 8px;border-radius:8px;border:1px solid var(--bor);background:var(--sur);color:var(--t2);cursor:pointer;text-align:center;transition:all .15s;}
+.ptbtn.active{background:var(--pr);color:#fff;border-color:var(--pr);}
+.pcap{font-size:11px;color:var(--t3);text-align:center;max-width:380px;line-height:1.5;}
+.pcap strong{color:var(--t2);}
+
+.phone-shell-wrap{position:relative;display:inline-block;}
+.phone-shell-wrap::before{content:'';position:absolute;right:-13px;top:130px;width:5px;height:55px;background:#222;border-radius:0 3px 3px 0;box-shadow:0 65px 0 #222;}
+.phone-shell-wrap::after{content:'';position:absolute;left:-13px;top:160px;width:5px;height:48px;background:#222;border-radius:3px 0 0 3px;}
+.phone-shell{width:390px;height:780px;background:#fff;border:10px solid #1a1a1a;border-radius:44px;box-shadow:0 0 0 1.5px #333,inset 0 0 0 1px #2a2a2a,0 24px 60px rgba(0,0,0,.4);overflow:hidden;display:flex;flex-direction:column;}
+.status-bar{background:#F2F0F8;height:38px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+.status-bar::after{content:'';width:12px;height:12px;border-radius:50%;background:#ddd;border:2px solid #ccc;}
+
+.screen{display:none;flex-direction:column;width:100%;flex:1;min-height:0;}
+.screen.active{display:flex;}
+
+/* ── LOGIN SCREEN ── */
+.login-bg{
+  flex:1;
+  background:#F2F0F8;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:space-between;
+  padding:48px 28px 32px;
+}
+
+/* Top section: logo + title */
+.login-top{display:flex;flex-direction:column;align-items:center;gap:14px;}
+.app-icon{
+  width:100px;height:100px;
+  border-radius:22px;
+  background:#FFD000;
+  display:flex;align-items:center;justify-content:center;
+  font-size:52px;
+  box-shadow:0 4px 16px rgba(0,0,0,.15);
+  position:relative;
+  overflow:hidden;
+}
+/* Muixeranga SVG icon placeholder */
+.app-icon svg{width:72px;height:72px;}
+
+.app-name{font-size:38px;font-weight:700;color:var(--pr);letter-spacing:-.5px;}
+.app-subtitle{font-size:17px;color:var(--t2);font-weight:400;margin-top:-6px;}
+
+/* Middle: auth card */
+.login-card{
+  width:100%;
+  background:#fff;
+  border-radius:18px;
+  padding:20px 18px;
+  box-shadow:0 2px 12px rgba(0,0,0,.06);
+  display:flex;flex-direction:column;gap:14px;
+}
+
+/* Google button */
+.btn-google{
+  width:100%;
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  padding:13px 16px;
+  border:1.5px solid var(--bor);
+  border-radius:10px;
+  background:#fff;
+  font-size:14px;font-weight:600;color:var(--t1);
+  cursor:pointer;
+  transition:background .15s,border-color .15s;
+  font-family:'Outfit',sans-serif;
+}
+.btn-google:hover{background:#fafafa;border-color:#d0d0d0;}
+.google-logo{width:20px;height:20px;flex-shrink:0;}
+
+/* Divider */
+.divider{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--t3);}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--bor);}
+
+/* Biometric button */
+.btn-bio{
+  width:100%;
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  padding:13px 16px;
+  border:1.5px solid var(--pr);
+  border-radius:10px;
+  background:#fff;
+  font-size:14px;font-weight:600;color:var(--pr);
+  cursor:pointer;
+  transition:background .15s;
+  font-family:'Outfit',sans-serif;
+}
+.btn-bio:hover{background:var(--pl);}
+.bio-icon{width:20px;height:20px;flex-shrink:0;}
+
+/* Bottom: legal */
+.login-legal{font-size:11px;color:var(--t3);text-align:center;line-height:1.5;padding:0 8px;}
+.login-legal a{color:var(--pr);text-decoration:none;font-weight:500;}
+
+/* ── BIOMETRIC PROMPT STATE ── */
+.bio-overlay{
+  flex:1;
+  background:#F2F0F8;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  padding:32px 28px;
+  gap:24px;
+}
+.bio-pulse{
+  width:100px;height:100px;
+  border-radius:50%;
+  background:var(--pl);
+  border:3px solid var(--pr);
+  display:flex;align-items:center;justify-content:center;
+  font-size:44px;
+  animation:pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(185,28,60,.3);}50%{box-shadow:0 0 0 18px rgba(185,28,60,0);}}
+.bio-title{font-size:22px;font-weight:700;color:var(--t1);text-align:center;}
+.bio-sub{font-size:14px;color:var(--t2);text-align:center;line-height:1.55;}
+.bio-cancel{font-size:14px;color:var(--pr);font-weight:600;cursor:pointer;padding:8px 20px;border-radius:8px;transition:background .15s;}
+.bio-cancel:hover{background:var(--pl);}
+
+/* ── SUCCESS STATE ── */
+.success-overlay{
+  flex:1;
+  background:#F2F0F8;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:16px;
+}
+.success-check{width:80px;height:80px;border-radius:50%;background:var(--gnb);border:3px solid #BBF7D0;display:flex;align-items:center;justify-content:center;font-size:36px;}
+.success-title{font-size:20px;font-weight:700;color:var(--gn);}
+.success-sub{font-size:13px;color:var(--t2);}
+
+/* ── SPEC SIDE ── */
+.scol{} .ss{margin-bottom:1.75rem;}
+.sh{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--t3);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.sh::after{content:'';flex:1;height:1px;background:var(--bor);}
+.sc{background:var(--sur);border:1px solid var(--bor);border-radius:12px;overflow:hidden;margin-bottom:8px;}
+.sch{padding:10px 14px;border-bottom:1px solid var(--bor);background:#FAFAFA;}
+.sct{font-size:12px;font-weight:700;color:var(--t1);}
+.scs{font-size:10px;color:var(--t3);margin-top:1px;}
+.scb{padding:12px 14px;}
+.sr{display:flex;gap:10px;font-size:12px;padding:7px 0;border-bottom:.5px solid #F3F4F6;}
+.sr:last-child{border-bottom:none;padding-bottom:0;}
+.srl{font-weight:600;color:var(--t1);min-width:160px;flex-shrink:0;}
+.srv{color:var(--t2);flex:1;line-height:1.5;}
+.srv code{font-family:monospace;font-size:10px;background:#F3F4F6;padding:1px 4px;border-radius:3px;}
+
+/* FLOW */
+.flow-card{background:var(--sur);border:1px solid var(--bor);border-radius:12px;overflow:hidden;margin-bottom:8px;}
+.fstep{display:flex;gap:12px;padding:10px 14px;border-bottom:.5px solid var(--bor);}
+.fstep:last-child{border-bottom:none;}
+.fn{width:22px;height:22px;border-radius:50%;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;}
+.fn.g{background:#EEF4FC;color:#1D6AE5;border:1px solid #BFDBFE;}
+.fn.b{background:var(--pl);color:var(--pr);border:1px solid #F9A8B8;}
+.ft{font-size:12px;font-weight:700;color:var(--t1);margin-bottom:2px;}
+.fd{font-size:11px;color:var(--t2);line-height:1.5;}
+.fd code{font-family:monospace;font-size:10px;background:#F3F4F6;padding:1px 4px;border-radius:3px;}
+
+/* STATE CARDS */
+.state-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;}
+@media(max-width:700px){.state-grid{grid-template-columns:1fr;}}
+.state-card{border-radius:10px;padding:10px 12px;border:1px solid;}
+.state-card.idle{background:#F9FAFB;border-color:var(--bor);}
+.state-card.bio{background:var(--pl);border-color:#F9A8B8;}
+.state-card.ok{background:var(--gnb);border-color:#BBF7D0;}
+.state-label{font-size:11px;font-weight:700;margin-bottom:3px;}
+.state-card.idle .state-label{color:var(--t2);}
+.state-card.bio .state-label{color:var(--pr);}
+.state-card.ok .state-label{color:var(--gn);}
+.state-desc{font-size:11px;color:var(--t2);line-height:1.4;}
+
+/* EDGE */
+.es{margin-top:2rem;padding-top:1.75rem;border-top:1px solid var(--bor);}
+.et{font-size:16px;font-weight:700;letter-spacing:-.2px;margin-bottom:4px;}
+.esu{font-size:12px;color:var(--t2);margin-bottom:1rem;}
+.eg{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;}
+.ec{background:var(--sur);border:1px solid var(--bor);border-radius:11px;overflow:hidden;}
+.ech{padding:8px 12px;background:#FAFAFA;border-bottom:1px solid var(--bor);font-size:11px;font-weight:700;}
+.ecb{padding:10px 12px;font-size:11px;color:var(--t2);line-height:1.5;}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="ph">
+  <div class="ey">Tabala · Specification</div>
+  <div class="ptitle">Section 0 — Login</div>
+  <div class="psub">Entry screen of the app. No username or password fields. Authentication is handled exclusively via <strong>Sign in with Google</strong> or <strong>Autenticació biomètrica</strong> (fingerprint / face ID). Both methods produce the same result: a logged-in session.</div>
+  <div class="bgs">
+    <span class="bdg bp">Screen: Login</span>
+    <span class="bdg bn">No credentials form</span>
+    <span class="bdg bn">Google OAuth 2.0</span>
+    <span class="bdg bg">Biometric: Android BiometricPrompt API</span>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- PHONE -->
+  <div class="phone-col">
+    <div class="ptoggle">
+      <div class="ptbtn active" onclick="sw('login')">Login screen</div>
+      <div class="ptbtn" onclick="sw('bio')">Biometric prompt</div>
+      <div class="ptbtn" onclick="sw('ok')">Success</div>
+    </div>
+    <div class="phone-shell-wrap">
+      <div class="phone-shell">
+        <div class="status-bar"></div>
+
+        <!-- DEFAULT: LOGIN -->
+        <div class="screen active" id="s-login">
+          <div class="login-bg">
+            <div class="login-top">
+              <!-- App icon -->
+              <div class="app-icon">
+                <svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" fill="#B91C3C">
+                  <!-- Casteller icon: simplified muixeranga figure -->
+                  <!-- Base: 3 figures -->
+                  <rect x="10" y="56" width="14" height="18" rx="3"/>
+                  <rect x="33" y="56" width="14" height="18" rx="3"/>
+                  <rect x="56" y="56" width="14" height="18" rx="3"/>
+                  <!-- Base heads -->
+                  <circle cx="17" cy="50" r="6"/>
+                  <circle cx="40" cy="50" r="6"/>
+                  <circle cx="63" cy="50" r="6"/>
+                  <!-- Middle: 2 figures -->
+                  <rect x="20" y="34" width="13" height="14" rx="3"/>
+                  <rect x="47" y="34" width="13" height="14" rx="3"/>
+                  <circle cx="26.5" cy="29" r="5.5"/>
+                  <circle cx="53.5" cy="29" r="5.5"/>
+                  <!-- Top: 1 figure -->
+                  <rect x="33" y="16" width="14" height="14" rx="3"/>
+                  <circle cx="40" cy="11" r="6"/>
+                  <!-- Top person arms up -->
+                  <line x1="30" y1="20" x2="22" y2="14" stroke="#B91C3C" stroke-width="3" stroke-linecap="round"/>
+                  <line x1="50" y1="20" x2="58" y2="14" stroke="#B91C3C" stroke-width="3" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <div>
+                <div class="app-name">Tabala</div>
+                <div class="app-subtitle">Iniciar sessió</div>
+              </div>
+            </div>
+
+            <!-- Auth card -->
+            <div class="login-card">
+              <!-- Google button -->
+              <button class="btn-google" onclick="sw('ok')">
+                <svg class="google-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                </svg>
+                Sign in with Google
+              </button>
+
+              <!-- Divider -->
+              <div class="divider">o</div>
+
+              <!-- Biometric button -->
+              <button class="btn-bio" onclick="sw('bio')">
+                <svg class="bio-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"/>
+                </svg>
+                Autenticació biomètrica
+              </button>
+            </div>
+
+            <!-- Legal -->
+            <div class="login-legal">
+              En continuar, acceptes els <a href="#">termes i condicions</a> de Tabala
+            </div>
+          </div>
+        </div>
+
+        <!-- BIOMETRIC PROMPT -->
+        <div class="screen" id="s-bio">
+          <div class="bio-overlay">
+            <div class="bio-pulse">🫆</div>
+            <div>
+              <div class="bio-title">Verifica la teua identitat</div>
+              <div class="bio-sub" style="margin-top:8px;">Usa la teua empremta dactilar o el reconeixement facial per accedir a Tabala</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:10px;width:100%;">
+              <button class="btn-google" style="background:var(--pr);color:#fff;border-color:var(--pr);gap:8px;" onclick="sw('ok')">
+                ✓ Confirmar
+              </button>
+              <div class="bio-cancel" onclick="sw('login')">Cancel·lar</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SUCCESS -->
+        <div class="screen" id="s-ok">
+          <div class="success-overlay">
+            <div class="success-check">✓</div>
+            <div class="success-title">Sessió iniciada</div>
+            <div class="success-sub">Redirigint a Tabala…</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="pcap"><strong>Try it:</strong> tap "Sign in with Google" → instant success. Tap "Autenticació biomètrica" → biometric prompt → confirm → success.</div>
+  </div>
+
+  <!-- SPEC -->
+  <div class="scol">
+
+    <div class="ss">
+      <div class="sh">Screen layout — elements in order</div>
+      <div class="sc">
+        <div class="sch"><div class="sct">Login screen structure</div><div class="scs">Background: soft lavender-grey (#F2F0F8). No top bar.</div></div>
+        <div class="scb">
+          <div class="sr"><div class="srl">App icon</div><div class="srv">100×100px rounded square. Yellow background (#FFD000) with the Muixeranga casteller figure in dark red. Centred at the top third of the screen.</div></div>
+          <div class="sr"><div class="srl">App name</div><div class="srv">"Tabala" in large bold red text (38px). Below the icon.</div></div>
+          <div class="sr"><div class="srl">Subtitle</div><div class="srv">"Iniciar sessió" in medium grey. Directly below the app name.</div></div>
+          <div class="sr"><div class="srl">Auth card</div><div class="srv">White rounded card centred vertically. Contains the two auth buttons and the divider between them.</div></div>
+          <div class="sr"><div class="srl">Legal footer</div><div class="srv">"En continuar, acceptes els termes i condicions de Tabala". Small grey text. Tappable link to T&C.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss">
+      <div class="sh">Authentication methods</div>
+
+      <div class="flow-card">
+        <div class="fstep">
+          <div class="fn g">G</div>
+          <div>
+            <div class="ft">Sign in with Google</div>
+            <div class="fd">Standard Google button design (Google logo + "Sign in with Google" label). White background, grey border. Triggers OAuth 2.0 Google Sign-In flow via the Android Google Identity Services SDK. On success → server creates or retrieves the user account and issues a session token.</div>
+          </div>
+        </div>
+        <div class="fstep">
+          <div class="fn b">👆</div>
+          <div>
+            <div class="ft">Autenticació biomètrica</div>
+            <div class="fd">White button, red border and red text + fingerprint icon. Uses the Android <code>BiometricPrompt API</code>. Supports fingerprint and face recognition depending on device capability. Only available if the user has previously logged in with Google (biometric is linked to an existing session).</div>
+          </div>
+        </div>
+        <div class="fstep">
+          <div class="fn" style="background:#F3F4F6;color:var(--t3);border:1px solid var(--bor);">÷</div>
+          <div>
+            <div class="ft">Divider</div>
+            <div class="fd">Horizontal line with "o" (or) centred between the two buttons. Grey colour. Purely visual — no interaction.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ss">
+      <div class="sh">Screen states</div>
+      <div class="state-grid">
+        <div class="state-card idle">
+          <div class="state-label">Idle</div>
+          <div class="state-desc">Default state. Both buttons active and tappable. No loading indicators.</div>
+        </div>
+        <div class="state-card bio">
+          <div class="state-label">Biometric prompt</div>
+          <div class="state-desc">System-level BiometricPrompt dialog overlays the screen. Pulsing fingerprint animation.</div>
+        </div>
+        <div class="state-card ok">
+          <div class="state-label">Success</div>
+          <div class="state-desc">Green check + "Sessió iniciada". Auto-redirects to home screen after ~1s.</div>
+        </div>
+      </div>
+      <div class="sc"><div class="scb">
+        <div class="sr"><div class="srl">Loading state</div><div class="srv">After tapping Google: button shows a spinner and becomes disabled. The rest of the screen is unaffected.</div></div>
+        <div class="sr"><div class="srl">Error state</div><div class="srv">A snackbar toast appears at the bottom: e.g. "Error en iniciar sessió. Torna-ho a intentar." Buttons re-enable.</div></div>
+        <div class="sr"><div class="srl">Auto-login</div><div class="srv">If the user has a valid session token, the login screen is skipped entirely and the app launches directly to the home screen.</div></div>
+      </div></div>
+    </div>
+
+    <div class="ss">
+      <div class="sh">Biometric availability rules</div>
+      <div class="sc"><div class="scb">
+        <div class="sr"><div class="srl">First-time user</div><div class="srv">Biometric button is hidden. User must log in with Google first. After a successful Google login, biometric is offered as an option for future logins.</div></div>
+        <div class="sr"><div class="srl">Returning user</div><div class="srv">Biometric button is visible. Tied to the most recent Google account used on this device.</div></div>
+        <div class="sr"><div class="srl">No biometrics enrolled</div><div class="srv">If the device has no biometrics set up, the button is hidden. Only Google sign-in is shown.</div></div>
+        <div class="sr"><div class="srl">Biometric changed</div><div class="srv">If the device detects a new fingerprint or face after login, the existing biometric token is invalidated. User must re-authenticate with Google.</div></div>
+        <div class="sr"><div class="srl">Session expiry</div><div class="srv">If the server session has expired, biometric re-authentication refreshes the token silently without redirecting to the login screen.</div></div>
+      </div></div>
+    </div>
+
+    <div class="ss">
+      <div class="sh">No credentials form — rationale</div>
+      <div class="sc"><div class="scb">
+        <div class="sr"><div class="srl">No username / password</div><div class="srv">The app deliberately avoids a traditional credentials form. Identity is fully delegated to Google OAuth 2.0, removing password management, recovery flows and security risks for Tabala.</div></div>
+        <div class="sr"><div class="srl">Account creation</div><div class="srv">There is no separate sign-up screen. Logging in with Google for the first time creates the account automatically. The Mestre then assigns the user to a group.</div></div>
+        <div class="sr"><div class="srl">Account recovery</div><div class="srv">Not handled by Tabala. Password recovery is handled entirely by Google. Users regain access by recovering their Google account.</div></div>
+      </div></div>
+    </div>
+
+  </div>
+</div>
+
+<div class="es">
+  <div class="et">Edge cases</div>
+  <div class="esu">Behaviour rules for boundary scenarios.</div>
+  <div class="eg">
+    <div class="ec"><div class="ech">No internet connection</div><div class="ecb">Google button disabled with a toast: "Sense connexió a internet." Biometric button remains available if a local token exists.</div></div>
+    <div class="ec"><div class="ech">Google account cancelled</div><div class="ecb">User dismisses the Google account picker. Returns silently to the idle login screen. No error shown.</div></div>
+    <div class="ec"><div class="ech">Biometric cancelled</div><div class="ecb">User cancels or fails 3×. Returns to the idle login screen. Toast: "Autenticació cancel·lada."</div></div>
+    <div class="ec"><div class="ech">Biometric lockout</div><div class="ecb">After too many failures, Android locks biometric. Biometric button becomes disabled with a label: "Bloquejat. Usa Google per entrar."</div></div>
+    <div class="ec"><div class="ech">User not yet in a group</div><div class="ecb">Login succeeds but the home screen shows an empty state: "Ets nou a Tabala. El teu mestre t'assignarà a un grup." No error, no crash.</div></div>
+    <div class="ec"><div class="ech">Multiple Google accounts</div><div class="ecb">Android's account picker is shown. User selects the desired account. The last-used account is pre-selected on future logins.</div></div>
+  </div>
+</div>
+
+</div>
+<script>
+function sw(n){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('s-'+n).classList.add('active');
+  document.querySelectorAll('.ptbtn').forEach((b,i)=>{
+    b.classList.toggle('active', ['login','bio','ok'][i]===n);
+  });
+}
+</script>
+</body>
+</html>

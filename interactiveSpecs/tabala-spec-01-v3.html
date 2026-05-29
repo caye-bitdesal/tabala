@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Tabala — Spec: Upcoming Events</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{--pr:#B91C3C;--pl:#FDECEA;--bg:#F3F4F6;--sur:#fff;--bor:#E5E7EB;--t1:#111827;--t2:#6B7280;--t3:#9CA3AF;--gn:#166534;--gnb:#DCFCE7;--gnbd:#BBF7D0;}
+body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--t1);line-height:1.5;}
+.page{max-width:1280px;margin:0 auto;padding:2.5rem 2rem 5rem;}
+/* HEADER */
+.ph{margin-bottom:2rem;padding-bottom:1.25rem;border-bottom:1px solid var(--bor);}
+.ey{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--t3);font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.ey::before{content:'';display:block;width:18px;height:2px;background:var(--pr);}
+.ptitle{font-size:28px;font-weight:700;letter-spacing:-.4px;margin-bottom:4px;}
+.psub{font-size:13px;color:var(--t2);max-width:600px;}
+.bgs{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+.bdg{display:inline-flex;align-items:center;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;}
+.bp{background:var(--pl);color:var(--pr);border:1px solid #F9A8B8;}.bn{background:var(--sur);color:var(--t2);border:1px solid var(--bor);}
+/* LAYOUT */
+.main{display:grid;grid-template-columns:430px 1fr;gap:3rem;align-items:start;}
+@media(max-width:960px){.main{grid-template-columns:1fr;}}
+/* PHONE SHELL */
+.phone-col{display:flex;flex-direction:column;align-items:center;gap:12px;position:sticky;top:1.5rem;}
+.ptoggle{display:flex;gap:4px;width:390px;}
+.ptbtn{flex:1;font-size:11px;font-weight:600;padding:6px 8px;border-radius:8px;border:1px solid var(--bor);background:var(--sur);color:var(--t2);cursor:pointer;text-align:center;transition:all .15s;}
+.ptbtn.active{background:var(--pr);color:#fff;border-color:var(--pr);}
+.pcap{font-size:11px;color:var(--t3);text-align:center;max-width:380px;line-height:1.5;}
+.pcap strong{color:var(--t2);}
+.phone-shell-wrap{position:relative;display:inline-block;}
+.phone-shell-wrap::before{content:'';position:absolute;right:-13px;top:130px;width:5px;height:55px;background:#222;border-radius:0 3px 3px 0;box-shadow:0 65px 0 #222;}
+.phone-shell-wrap::after{content:'';position:absolute;left:-13px;top:160px;width:5px;height:48px;background:#222;border-radius:3px 0 0 3px;}
+.phone-shell{width:390px;height:780px;background:#fff;border:10px solid #1a1a1a;border-radius:44px;box-shadow:0 0 0 1.5px #333,inset 0 0 0 1px #2a2a2a,0 24px 60px rgba(0,0,0,.4);overflow:hidden;display:flex;flex-direction:column;}
+.status-bar{background:#111;height:38px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+.status-bar::after{content:'';width:12px;height:12px;border-radius:50%;background:#000;border:2px solid #1a1a1a;}
+.screen{display:none;flex-direction:column;width:100%;flex:1;min-height:0;}
+.screen.active{display:flex;}
+.scroll{flex:1;overflow-y:auto;scrollbar-width:none;}
+.scroll::-webkit-scrollbar{display:none;}
+/* TOPBAR */
+.topbar{background:var(--pr);padding:12px 16px 10px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.topbar-title{font-size:18px;font-weight:700;color:#fff;}
+.topbar-sub{font-size:11px;color:rgba(255,255,255,.7);}
+.topbar-logo{width:36px;height:36px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--pr);}
+.topbar-back{display:flex;align-items:center;gap:6px;color:#fff;font-size:14px;font-weight:600;flex:1;}
+.topbar-back svg{width:20px;height:20px;}
+/* EVENT LIST */
+.sec-hdr{padding:12px 16px 8px;background:#fff;border-bottom:.5px solid var(--bor);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.sec-hdr-title{font-size:16px;font-weight:700;}
+.sec-hdr-link{font-size:12px;color:var(--pr);font-weight:600;}
+.ev{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:.5px solid var(--bor);background:#fff;cursor:pointer;transition:background .12s;}
+.ev:hover{background:#fafafa;}
+.ev-img{width:64px;height:64px;border-radius:10px;background:#374151;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;}
+.ev-info{flex:1;min-width:0;}
+.ev-name{font-size:14px;font-weight:700;color:var(--t1);line-height:1.3;margin-bottom:3px;}
+.ev-mr{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--t2);margin-bottom:2px;}
+.ev-mr svg{width:11px;height:11px;flex-shrink:0;}
+.ev-conf{font-size:12px;color:var(--pr);font-weight:700;display:flex;align-items:center;gap:4px;margin-top:3px;}
+.ev-arr{color:var(--t3);font-size:16px;}
+/* DETAIL */
+.det-hero{width:100%;height:160px;background:linear-gradient(135deg,#1e1b4b,#374151);display:flex;align-items:center;justify-content:center;font-size:48px;flex-shrink:0;}
+.det-body{padding:14px 16px;}
+.det-tr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;}
+.det-title{font-size:20px;font-weight:700;line-height:1.25;flex:1;}
+.det-badge{background:var(--gnb);color:var(--gn);border:1px solid var(--gnbd);font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;margin-left:8px;margin-top:3px;}
+.det-mr{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--t2);margin-bottom:5px;}
+.det-mr svg{width:14px;height:14px;color:var(--t3);}
+.det-conf{font-size:13px;color:var(--pr);font-weight:700;display:flex;align-items:center;gap:5px;margin-bottom:10px;}
+.det-div{height:.5px;background:var(--bor);margin:10px 0;}
+.det-desc{font-size:13px;color:var(--t2);line-height:1.6;margin-bottom:14px;}
+.det-cta{display:block;width:100%;background:var(--pr);color:#fff;font-size:14px;font-weight:700;text-align:center;padding:13px;border-radius:12px;border:none;cursor:pointer;font-family:'Outfit',sans-serif;margin-bottom:16px;}
+.det-cta.confirmed{background:var(--gn);}
+.gal-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.gal-title{font-size:16px;font-weight:700;}
+.gal-add{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--pr);font-weight:600;border:1px solid var(--pr);border-radius:7px;padding:4px 10px;}
+.gal-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;}
+.gal-photo{aspect-ratio:1;border-radius:8px;background:#374151;display:flex;align-items:center;justify-content:center;font-size:28px;}
+/* BOTTOM NAV */
+.nav{border-top:.5px solid var(--bor);display:flex;background:#fff;flex-shrink:0;}
+.nt{flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 4px 10px;gap:2px;}
+.nt svg{width:22px;height:22px;color:var(--t3);}
+.nt.active svg{color:var(--pr);}
+.nt-lbl{font-size:10px;color:var(--t3);font-weight:500;}
+.nt.active .nt-lbl{color:var(--pr);font-weight:700;}
+/* SPEC */
+.scol{}
+.ss{margin-bottom:1.75rem;}
+.sh{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--t3);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.sh::after{content:'';flex:1;height:1px;background:var(--bor);}
+.sc{background:var(--sur);border:1px solid var(--bor);border-radius:12px;overflow:hidden;margin-bottom:8px;}
+.sch{padding:10px 14px;border-bottom:1px solid var(--bor);background:#FAFAFA;font-size:12px;font-weight:700;}
+.scb{padding:12px 14px;}
+.sr{display:flex;gap:10px;font-size:12px;padding:7px 0;border-bottom:.5px solid #F3F4F6;}
+.sr:last-child{border-bottom:none;padding-bottom:0;}
+.srl{font-weight:600;color:var(--t1);min-width:140px;flex-shrink:0;}
+.srv{color:var(--t2);flex:1;line-height:1.5;}
+.srv code{font-family:monospace;font-size:10px;background:#F3F4F6;padding:1px 4px;border-radius:3px;}
+.fl{list-style:none;display:flex;flex-direction:column;gap:5px;}
+.fi{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--t2);background:#FAFAFA;border-radius:8px;padding:8px 10px;}
+.fn{width:19px;height:19px;border-radius:50%;background:var(--pl);color:var(--pr);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;}
+.ft strong{color:var(--t1);font-weight:600;}
+.ft em{font-style:normal;color:var(--t3);font-size:10px;display:block;margin-top:1px;}
+.rs-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.rs{border-radius:10px;padding:10px 12px;border:1px solid;}
+.rs.y{background:var(--gnb);border-color:var(--gnbd);}
+.rs.n{background:#FEF2F2;border-color:#FECACA;}
+.rsl{font-size:12px;font-weight:700;margin-bottom:3px;}
+.rs.y .rsl{color:var(--gn);}.rs.n .rsl{color:#991B1B;}
+.rsd{font-size:11px;color:var(--t2);line-height:1.4;}
+.es{margin-top:2rem;padding-top:1.75rem;border-top:1px solid var(--bor);}
+.et{font-size:16px;font-weight:700;letter-spacing:-.2px;margin-bottom:4px;}
+.esu{font-size:12px;color:var(--t2);margin-bottom:1rem;}
+.eg{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;}
+.ec{background:var(--sur);border:1px solid var(--bor);border-radius:11px;overflow:hidden;}
+.ech{padding:8px 12px;background:#FAFAFA;border-bottom:1px solid var(--bor);font-size:11px;font-weight:700;}
+.ecb{padding:10px 12px;font-size:11px;color:var(--t2);line-height:1.5;}
+</style>
+</head>
+<body>
+<div class="page">
+<div class="ph">
+  <div class="ey">Tabala · Specification</div>
+  <div class="ptitle">Section 1 — Upcoming Events</div>
+  <div class="psub">Home screen. Chronological list of upcoming group events. The RSVP "Confirmar Assistència" button lives exclusively in the event detail screen, not on the list.</div>
+  <div class="bgs">
+    <span class="bdg bp">Screen: Inici (Home)</span>
+    <span class="bdg bn">Roles: Member · Mestre</span>
+    <span class="bdg bn">RSVP in detail only</span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="phone-col">
+    <div class="ptoggle">
+      <div class="ptbtn active" onclick="sw('list')">Event list</div>
+      <div class="ptbtn" onclick="sw('detail')">Event detail</div>
+    </div>
+    <div class="phone-shell-wrap">
+      <div class="phone-shell">
+        <div class="status-bar"></div>
+
+        <!-- LIST SCREEN -->
+        <div class="screen active" id="s-list">
+          <div class="topbar">
+            <div><div class="topbar-title">Muixeranga d'Elx</div><div class="topbar-sub">Elx</div></div>
+            <div class="topbar-logo">MX</div>
+          </div>
+          <div class="sec-hdr"><div class="sec-hdr-title">Pròxims esdeveniments</div><div class="sec-hdr-link">Veure tot</div></div>
+          <div class="scroll">
+            <div class="ev" onclick="sw('detail')">
+              <div class="ev-img">🎉</div>
+              <div class="ev-info">
+                <div class="ev-name">Dia de Sant Joan</div>
+                <div class="ev-mr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Plaça Major, València</div>
+                <div class="ev-mr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>24 de juny, 2026 · 18:00</div>
+                <div class="ev-conf"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>45 confirmades</div>
+              </div>
+              <div class="ev-arr">›</div>
+            </div>
+            <div class="ev" onclick="sw('detail')">
+              <div class="ev-img">🏛️</div>
+              <div class="ev-info">
+                <div class="ev-name">Trobada de Muixerangues</div>
+                <div class="ev-mr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Alzira</div>
+                <div class="ev-mr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>2 de juliol, 2026 · 10:00</div>
+                <div class="ev-conf"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>62 confirmades</div>
+              </div>
+              <div class="ev-arr">›</div>
+            </div>
+            <div class="ev" onclick="sw('detail')">
+              <div class="ev-img">🎊</div>
+              <div class="ev-info">
+                <div class="ev-name">Festa Major</div>
+                <div class="ev-mr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Sueca</div>
+                <div class="ev-mr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>15 de juliol, 2026 · 19:30</div>
+                <div class="ev-conf"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>38 confirmades</div>
+              </div>
+              <div class="ev-arr">›</div>
+            </div>
+            <div class="ev">
+              <div class="ev-img">🎵</div>
+              <div class="ev-info">
+                <div class="ev-name">Assaig General</div>
+                <div class="ev-mr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Local de la Muixeranga</div>
+                <div class="ev-mr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>20 de març, 2026 · 20:00</div>
+                <div class="ev-conf"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>52 confirmades</div>
+              </div>
+              <div class="ev-arr">›</div>
+            </div>
+          </div>
+          <div class="nav">
+            <div class="nt active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg><span class="nt-lbl">Inici</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="nt-lbl">Muixerangues</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="nt-lbl">Figures</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span class="nt-lbl">El meu perfil</span></div>
+          </div>
+        </div>
+
+        <!-- DETAIL SCREEN -->
+        <div class="screen" id="s-detail">
+          <div class="topbar" style="padding:10px 14px 8px;">
+            <div class="topbar-back" onclick="sw('list')"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>Detalls de l'esdeveniment</div>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          </div>
+          <div class="scroll">
+            <div class="det-hero">🎉</div>
+            <div class="det-body">
+              <div class="det-tr"><div class="det-title">Festa Major de Sueca</div><div class="det-badge">Confirmada</div></div>
+              <div class="det-mr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Plaça Major, Sueca</div>
+              <div class="det-mr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>15 Set 2024 · 18:00</div>
+              <div class="det-conf"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>45 muixeranguers confirmats</div>
+              <div class="det-div"></div>
+              <div class="det-desc">Gran celebració de la Festa Major amb actuació completa de la muixeranga. Construirem diverses torres i figures tradicionals al llarg de la vesprada.</div>
+              <button class="det-cta confirmed">Confirmar Assistència</button>
+              <div class="gal-hdr">
+                <div class="gal-title">Galeria de fotos</div>
+                <div class="gal-add"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>Afegir</div>
+              </div>
+              <div class="gal-grid">
+                <div class="gal-photo">🎭</div><div class="gal-photo" style="background:#1f2937;">👥</div>
+                <div class="gal-photo" style="background:#111827;">🌃</div><div class="gal-photo" style="background:#4b5563;">🔥</div>
+                <div class="gal-photo">🎊</div><div class="gal-photo" style="background:#1f2937;">📸</div>
+              </div>
+            </div>
+          </div>
+          <div class="nav">
+            <div class="nt active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="nt-lbl">Inici</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span class="nt-lbl">Muixerangues</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="nt-lbl">Figures</span></div>
+            <div class="nt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span class="nt-lbl">El meu perfil</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="pcap"><strong>Try it:</strong> toggle between list and detail. RSVP only appears in the detail screen.</div>
+  </div>
+
+  <!-- SPEC -->
+  <div class="scol">
+    <div class="ss">
+      <div class="sh">Event list — card fields</div>
+      <ul class="fl">
+        <li class="fi"><div class="fn">1</div><div class="ft"><strong>Thumbnail photo</strong> — 64×64px rounded. Emoji placeholder when no image. <em>Tappable: opens detail.</em></div></li>
+        <li class="fi"><div class="fn">2</div><div class="ft"><strong>Event name</strong> — bold, max 2 lines, ellipsis. <em>Primary identifier.</em></div></li>
+        <li class="fi"><div class="fn">3</div><div class="ft"><strong>Location</strong> — pin icon + venue name. <em>1 line truncated.</em></div></li>
+        <li class="fi"><div class="fn">4</div><div class="ft"><strong>Date & time</strong> — calendar icon + "DD de mes, YYYY · HH:MM". <em>Always visible.</em></div></li>
+        <li class="fi"><div class="fn">5</div><div class="ft"><strong>Confirmed count</strong> — people icon + "N confirmades" in red. <em>No RSVP controls on list.</em></div></li>
+        <li class="fi"><div class="fn">6</div><div class="ft"><strong>Chevron ›</strong> — full row is the tap target. <em>Opens detail.</em></div></li>
+      </ul>
+    </div>
+    <div class="ss">
+      <div class="sh">Event detail — screen sections</div>
+      <ul class="fl">
+        <li class="fi"><div class="fn">1</div><div class="ft"><strong>Hero image</strong> — full-width, 160px tall. Dark gradient fallback. <em>Top of screen.</em></div></li>
+        <li class="fi"><div class="fn">2</div><div class="ft"><strong>Title + "Confirmada" badge</strong> — green pill shown only after RSVP confirmed. <em>Top-right of title.</em></div></li>
+        <li class="fi"><div class="fn">3</div><div class="ft"><strong>Location / Date / Confirmats</strong> — icon rows; confirmats count in red. <em>Below title.</em></div></li>
+        <li class="fi"><div class="fn">4</div><div class="ft"><strong>Description</strong> — free text from Mestre. <em>Greyed, scrolls if long.</em></div></li>
+        <li class="fi"><div class="fn">5</div><div class="ft"><strong>CTA "Confirmar Assistència"</strong> — full-width red button. Turns dark green when confirmed. <em>Only here, not on list.</em></div></li>
+        <li class="fi"><div class="fn">6</div><div class="ft"><strong>Photo gallery</strong> — 2-col grid + "Afegir" button. <em>Visible on past events only.</em></div></li>
+      </ul>
+    </div>
+    <div class="ss">
+      <div class="sh">RSVP behaviour</div>
+      <div class="rs-grid">
+        <div class="rs y"><div class="rsl">✓ Confirmed</div><div class="rsd">Button turns dark green. "Confirmada" badge on title. Added to confirmats count.</div></div>
+        <div class="rs n"><div class="rsl">Not confirmed</div><div class="rsd">Button stays red. No badge. Not counted. Reversible at any time before event.</div></div>
+      </div>
+      <div class="sc" style="margin-top:8px;"><div class="scb">
+        <div class="sr"><div class="srl">RSVP location</div><div class="srv">Detail screen only. The list is read-only — shows counts but has no action buttons.</div></div>
+        <div class="sr"><div class="srl">Persistence</div><div class="srv">Saved to server on tap. Survives app close and reopen.</div></div>
+        <div class="sr"><div class="srl">Past events</div><div class="srv">CTA replaced by the photo gallery section after the event date/time passes.</div></div>
+      </div></div>
+    </div>
+    <div class="ss">
+      <div class="sh">Top bar & navigation</div>
+      <div class="sc"><div class="scb">
+        <div class="sr"><div class="srl">Top bar (list)</div><div class="srv">Group name + city left. Circular group logo right. Dark red background.</div></div>
+        <div class="sr"><div class="srl">Top bar (detail)</div><div class="srv">Back arrow + "Detalls de l'esdeveniment" + share icon. Same dark red.</div></div>
+        <div class="sr"><div class="srl">Bottom nav</div><div class="srv">4 tabs: Inici (active), Muixerangues, Figures, El meu perfil. Active = red icon + red label.</div></div>
+      </div></div>
+    </div>
+  </div>
+</div>
+
+<div class="es">
+  <div class="et">Edge cases</div>
+  <div class="esu">Behaviour rules for boundary scenarios.</div>
+  <div class="eg">
+    <div class="ec"><div class="ech">Empty list</div><div class="ecb">Empty state + "No upcoming events." CTA to view past events if any exist.</div></div>
+    <div class="ec"><div class="ech">No hero photo</div><div class="ecb">Group colour placeholder with event name initial. No broken image icon shown.</div></div>
+    <div class="ec"><div class="ech">Long event name</div><div class="ecb">List: 2 lines max + ellipsis. Detail: wraps up to 2 lines below hero.</div></div>
+    <div class="ec"><div class="ech">Network error on RSVP</div><div class="ecb">Button reverts to previous state. Toast: "Could not save. Check connection."</div></div>
+    <div class="ec"><div class="ech">0 confirmats</div><div class="ecb">Shows "0 confirmades". Row not hidden. No special styling.</div></div>
+    <div class="ec"><div class="ech">Today's event</div><div class="ecb">Date shows "Avui · HH:MM" instead of full date. Subtle accent highlight on card.</div></div>
+  </div>
+</div>
+</div>
+<script>
+function sw(n){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('s-'+n).classList.add('active');
+  document.querySelectorAll('.ptbtn').forEach((b,i)=>b.classList.toggle('active',i===(n==='list'?0:1)));
+}
+</script>
+</body>
+</html>

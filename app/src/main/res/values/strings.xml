@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Tabala</string>
+    <string name="nav_inici">Inici</string>
+    <string name="nav_muixeranges">Muixeranges</string>
+    <string name="nav_figures">Figures</string>
+    <string name="nav_perfil">Perfil</string>
+    <string name="screen_inici">Inici</string>
+    <string name="screen_muixeranges">Muixeranges</string>
+    <string name="screen_figures">Figures</string>
+    <string name="screen_perfil">Perfil</string>
+</resources>
