@@ -1,5 +1,7 @@
 <resources>
     <string name="app_name">Tabala</string>
+    <string name="app_title">Tabala</string>
+    <string name="action_back">Enrere</string>
     <string name="nav_inici">Inici</string>
     <string name="nav_muixeranges">Muixeranges</string>
     <string name="nav_figures">Figures</string>
