@@ -1,5 +1,14 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Change the parent to this specific one -->
+    <style name="Theme.Tabala" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Main theme colors -->
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryVariant">@color/primary_dark</item>
+        <item name="colorSecondary">@color/secondary</item>
 
-    <style name="Theme.Tabala" parent="android:Theme.Material.Light.NoActionBar" />
+        <!-- Status bar and nav bar -->
+        <item name="android:statusBarColor">@color/primary_dark</item>
+        <item name="android:navigationBarColor">@color/background</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
 </resources>

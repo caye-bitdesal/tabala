@@ -2,10 +2,22 @@ package com.bitdesal.tabala.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+// Roig Primari
+val PrimaryMain = Color(0xFFC41E3A)
+val PrimaryLight = Color(0xFFE74C3C)
+val PrimaryDark = Color(0xFF8B1428)
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+// Groc
+val SecondaryMain = Color(0xFFFFD700)
+val SecondaryLight = Color(0xFFFFE44D)
+val SecondaryDark = Color(0xFFCCB000)
+
+// Blau Marí
+val TertiaryMain = Color(0xFF1E3A8A)
+val TertiaryLight = Color(0xFF3B82A8)
+val TertiaryDark = Color(0xFF152961)
+
+// Altres
+val BackgroundDefault = Color(0xFFF0F7FF)
+val SurfacePaper = Color(0xFFFFFFFF)
+val CyanMain = Color(0xFF00CED1)
