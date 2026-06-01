@@ -57,6 +57,8 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material3.adaptive.navigation.suite)
     implementation(libs.androidx.compose.material.icons.core)
+    implementation(libs.androidx.compose.animation)
+    implementation(libs.androidx.compose.foundation)
 
     // ── Navigation 3 ─────────────────────────────────────────────────────────
     implementation(libs.androidx.navigation3.runtime)
@@ -75,6 +77,7 @@ dependencies {
     // ── Core ─────────────────────────────────────────────────────────────────
     implementation(libs.androidx.core.ktx)
     implementation(libs.android.material)
+    implementation(libs.androidx.core.splashscreen)
 
     // ── Tests ────────────────────────────────────────────────────────────────
     testImplementation(libs.junit)

@@ -5,5 +5,5 @@ import androidx.annotation.DrawableRes
 data class UserGroup(
     val id: String,
     val name: String,
-    @param:DrawableRes val logoResId: Int? = null,
+    val logoResId: Int? = null,
 )
