@@ -2,6 +2,7 @@ package com.bitdesal.tabala.ui.main
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.bitdesal.tabala.data.repository.UserGroupRepositoryImpl.Companion.LOGO_MUIXERANGA_ELX
 import com.bitdesal.tabala.ui.components.R as ComponentsR
 import com.bitdesal.tabala.domain.model.UserGroup
 import com.bitdesal.tabala.domain.usecase.GetCurrentUserGroupUseCase
@@ -26,7 +27,7 @@ class MainViewModel(
     // The data layer is intentionally logo-free; this app-level mapper owns the association.
     private fun UserGroup.withAppLogo(): UserGroup = copy(
         logoResId = when (id) {
-            "muixeranga-elx" -> ComponentsR.drawable.logo_muixeranga_elx
+            LOGO_MUIXERANGA_ELX -> ComponentsR.drawable.logo_muixeranga_elx
             else -> null
         }
     )

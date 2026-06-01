@@ -8,8 +8,12 @@ import com.bitdesal.tabala.domain.repository.UserGroupRepository
 // drawable resources so the data layer stays free of Android UI dependencies.
 class UserGroupRepositoryImpl : UserGroupRepository {
     override suspend fun getCurrentUserGroup(): UserGroup = UserGroup(
-        id = "muixeranga-elx",
+        id = LOGO_MUIXERANGA_ELX,
         name = "Muixeranga d'Elx",
         logoResId = null,
     )
+    
+    companion object {
+        val LOGO_MUIXERANGA_ELX = "muixeranga-elx"
+    }
 }
