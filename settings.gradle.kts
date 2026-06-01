@@ -24,4 +24,20 @@ dependencyResolutionManagement {
 
 rootProject.name = "Tabala"
 include(":app")
+
+// Presentation layer
+include(":ui:components")
+include(":ui:theme")
+
+// Domain layer
+include(":domain:models")
+
+// Data layer
+include(":data:network")
+include(":data:database")
+include(":data:repository")
+
+// Core layer
+include(":core:utils")
+include(":core:analytics")
  

@@ -8,7 +8,7 @@ import androidx.compose.ui.unit.sp
 
 val Typography = Typography(
     headlineLarge = TextStyle(
-        fontFamily = FontFamily.Default, // Cambiar por Outfit si la tienes
+        fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Bold,
         fontSize = 32.sp
     ),

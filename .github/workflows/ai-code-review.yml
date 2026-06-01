@@ -34,7 +34,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install review dependencies
-        run: pip install --quiet google-generativeai PyGithub
+        run: pip install --quiet google-genai PyGithub
 
       - name: Run AI Code Review
         env:

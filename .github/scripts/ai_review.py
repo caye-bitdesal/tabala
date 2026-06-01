@@ -19,14 +19,15 @@ import subprocess
 import sys
 import textwrap
 
-import google.generativeai as genai
-from github import Github
+from google import genai
+from google.genai import types
+from github import Github, Auth
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Update this to the latest available Gemini model when Google releases new ones.
+# Update to the latest available model when Google releases new ones.
 # See: https://ai.google.dev/gemini-api/docs/models
 GEMINI_MODEL = "gemini-2.5-pro"
 
@@ -88,10 +89,9 @@ SYSTEM_PROMPT = textwrap.dedent("""\
     resolved concerns in `addressed_comments`.
 
     ─────────────────────────────────────────
-    OUTPUT FORMAT — return ONLY valid JSON
+    OUTPUT FORMAT — strict JSON, no extra text
     ─────────────────────────────────────────
-    No markdown fences, no preamble, no trailing text.
-    Schema (all arrays may be empty []):
+    Return ONLY a JSON object matching the schema below. All arrays may be empty [].
 
     {
       "summary": "2–3 sentence overall assessment of the PR",
@@ -117,9 +117,11 @@ SYSTEM_PROMPT = textwrap.dedent("""\
       ]
     }
 
-    Use verdict="request_changes" when there are error-severity issues.
-    Use verdict="comment" when there are only warnings, suggestions, or questions.
-    Use verdict="approve" only when the code is clean with no issues.
+    Use verdict="request_changes" ONLY when there is at least one issue with severity="error"
+      (crash risk, data loss, security hole, broken logic). Warnings and suggestions alone
+      must NOT block a merge — use verdict="comment" for those.
+    Use verdict="comment" when there are only warnings, suggestions, or open questions.
+    Use verdict="approve" when there are no issues at all (empty issues array).
 """)
 
 # ---------------------------------------------------------------------------
@@ -133,6 +135,7 @@ CATEGORY_LABEL = {
     "understandability": "Understandability",
     "reusability": "Reusability",
 }
+
 
 
 def run_git(cmd: str) -> str:
@@ -149,18 +152,39 @@ def get_diff(base_sha: str, head_sha: str) -> str:
 
 
 def get_previous_review_comments(pr) -> list[dict]:
-    """Collect inline review comments left by the bot in previous rounds."""
-    bot_comments = []
+    """Collect inline review comments from previous review rounds (human + bot)."""
+    comments = []
     for comment in pr.get_review_comments():
-        if "github-actions" in (comment.user.login or ""):
-            continue
-        bot_comments.append({
+        comments.append({
             "file": comment.path,
             "line": comment.original_line,
             "body": comment.body,
             "author": comment.user.login,
+            "is_bot": "github-actions" in (comment.user.login or ""),
         })
-    return bot_comments
+    return comments
+
+
+def dismiss_stale_bot_reviews(pr, final_verdict: str) -> None:
+    """Dismiss previous REQUEST_CHANGES reviews posted by this bot.
+
+    Called when the new review has no blocking errors — meaning the PR is
+    now mergeable and the old blocks should be lifted automatically.
+    """
+    if final_verdict == "REQUEST_CHANGES":
+        return  # New errors found; leave old reviews visible.
+
+    dismissed = 0
+    for review in pr.get_reviews():
+        is_bot = "github-actions" in (review.user.login or "")
+        if is_bot and review.state == "CHANGES_REQUESTED":
+            try:
+                review.dismiss("Previous issues addressed or no longer applicable — see latest review.")
+                dismissed += 1
+            except Exception as exc:
+                print(f"[review] Could not dismiss review {review.id}: {exc}")
+    if dismissed:
+        print(f"[review] Dismissed {dismissed} stale REQUEST_CHANGES review(s)")
 
 
 def get_previous_issue_comments(pr) -> list[dict]:
@@ -202,18 +226,34 @@ def build_user_prompt(
 
 
 def call_gemini(user_prompt: str) -> dict:
-    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-    model = genai.GenerativeModel(
-        model_name=GEMINI_MODEL,
-        system_instruction=SYSTEM_PROMPT,
-        generation_config=genai.GenerationConfig(
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
             temperature=0.2,
-            max_output_tokens=4096,
+            max_output_tokens=8192,
+            response_mime_type="application/json",
         ),
     )
-    response = model.generate_content(user_prompt)
+
+    # Check finish_reason before accessing text — the new SDK uses enum values
+    candidate = response.candidates[0] if response.candidates else None
+    if candidate is None:
+        raise RuntimeError("Gemini returned no candidates.")
+
+    finish_reason = candidate.finish_reason
+    ok_reasons = (types.FinishReason.STOP, types.FinishReason.FINISH_REASON_UNSPECIFIED, None)
+    if finish_reason not in ok_reasons:
+        raise RuntimeError(
+            f"Gemini stopped early with finish_reason={finish_reason}. "
+            "For MAX_TOKENS: reduce MAX_DIFF_CHARS or increase max_output_tokens."
+        )
+
     raw = response.text.strip()
-    # Strip accidental markdown code fences
+    # Strip accidental markdown code fences (shouldn't happen with response_mime_type=json)
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1]
         raw = raw.rsplit("```", 1)[0]
@@ -265,6 +305,29 @@ def format_review_body(review: dict) -> str:
     return "\n".join(lines)
 
 
+def resolve_verdict(review: dict) -> str:
+    """Map the model's verdict to a GitHub event, enforcing severity rules.
+
+    Rules:
+    - REQUEST_CHANGES is only allowed when at least one issue has severity="error".
+      Warnings and suggestions alone must never block a merge.
+    - APPROVE is used when the model says approve (no issues at all).
+    - COMMENT is used for everything in between.
+    """
+    has_errors = any(
+        i.get("severity") == "error" for i in review.get("issues", [])
+    )
+    raw = review.get("verdict", "comment").upper()
+
+    if raw == "REQUEST_CHANGES" and not has_errors:
+        raw = "COMMENT"
+
+    if raw not in ("APPROVE", "REQUEST_CHANGES", "COMMENT"):
+        raw = "COMMENT"
+
+    return raw
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -287,7 +350,7 @@ def main() -> None:
     print(f"[review] Diff size: {len(diff):,} chars")
 
     # ── 2. Fetch PR context from GitHub ─────────────────────────────────────
-    g = Github(token)
+    g = Github(auth=Auth.Token(token))
     repo = g.get_repo(repo_name)
     pr = repo.get_pull(pr_number)
 
@@ -298,7 +361,7 @@ def main() -> None:
         f"{len(issue_comments)} issue comment(s)"
     )
 
-    # ── 3. Call Claude ───────────────────────────────────────────────────────
+    # ── 3. Call Gemini ───────────────────────────────────────────────────────
     prompt = build_user_prompt(
         diff, pr.title, pr.body or "", review_comments, issue_comments
     )
@@ -310,14 +373,16 @@ def main() -> None:
         f"{len(review.get('open_questions', []))} question(s)"
     )
 
-    # ── 4. Post the GitHub PR review ─────────────────────────────────────────
+    # ── 4. Resolve verdict and post the GitHub PR review ────────────────────
+    final_verdict = resolve_verdict(review)
     body = format_review_body(review)
-    raw_verdict = review.get("verdict", "comment").upper()
-    if raw_verdict not in ("APPROVE", "REQUEST_CHANGES", "COMMENT"):
-        raw_verdict = "COMMENT"
 
-    pr.create_review(body=body, event=raw_verdict)
-    print(f"[review] Review posted (event={raw_verdict})")
+    # Dismiss previous bot REQUEST_CHANGES reviews before posting the new one
+    # so the PR is not left in a blocked state when errors are gone.
+    dismiss_stale_bot_reviews(pr, final_verdict)
+
+    pr.create_review(body=body, event=final_verdict)
+    print(f"[review] Review posted (event={final_verdict})")
 
     # ── 5. Post open questions as a separate comment so they are highly visible
     questions = review.get("open_questions", [])
