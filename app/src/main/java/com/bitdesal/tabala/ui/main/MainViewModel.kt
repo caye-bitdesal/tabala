@@ -18,7 +18,7 @@ class MainViewModel(
         emit(getCurrentUserGroup()?.withAppLogo())
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
+        started = SharingStarted.Lazily,
         initialValue = null,
     )
 

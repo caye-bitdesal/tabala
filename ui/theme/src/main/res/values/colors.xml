@@ -1,4 +1,5 @@
 <resources>
+    <color name="white">#FFFFFF</color>
     <color name="primary">#C41E3A</color>
     <color name="primary_dark">#8B1428</color>
     <color name="secondary">#FFD700</color>
