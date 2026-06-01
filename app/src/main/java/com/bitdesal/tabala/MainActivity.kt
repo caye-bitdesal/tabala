@@ -35,6 +35,9 @@ import com.bitdesal.tabala.ui.theme.PrimaryMain
 import com.bitdesal.tabala.ui.theme.TabalaTheme
 import org.koin.androidx.compose.koinViewModel
 
+/**
+ * This is the single main activity that orchestrates all the composables in the app
+ */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
