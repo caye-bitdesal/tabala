@@ -3,12 +3,12 @@ package com.bitdesal.tabala.navigation
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.navigation3.runtime.NavKey
-import com.bitdesal.tabala.R
+import com.bitdesal.tabala.ui.components.R
 
 data class TopLevelDestination(
     val navKey: NavKey,
     @StringRes val labelRes: Int,
-    @param:DrawableRes val iconRes: Int,
+    @DrawableRes val iconRes: Int,
 )
 
 val TopLevelDestinations: List<TopLevelDestination> = listOf(

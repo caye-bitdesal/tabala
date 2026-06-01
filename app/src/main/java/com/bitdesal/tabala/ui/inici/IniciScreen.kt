@@ -11,7 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.bitdesal.tabala.R
+import com.bitdesal.tabala.ui.components.R
 import com.bitdesal.tabala.ui.theme.TabalaTheme
 
 @Composable

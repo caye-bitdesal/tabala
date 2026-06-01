@@ -55,6 +55,7 @@ fun TabalaApp() {
     val backStack = rememberNavBackStack(IniciNavKey)
     val currentDestination = backStack.lastOrNull()?.toTopLevelDestination()
         ?: TopLevelDestinations.first()
+    val onBack: () -> Unit = { backStack.removeLastOrNull() }
 
     val viewModel: MainViewModel = koinViewModel()
     val userGroup by viewModel.userGroup.collectAsStateWithLifecycle()
@@ -105,14 +106,14 @@ fun TabalaApp() {
                 TabalaTopAppBar(
                     title = title,
                     showBackButton = showBackButton,
-                    onBackClick = { backStack.removeLastOrNull() },
+                    onBackClick = onBack,
                     groupLogoResId = userGroup?.logoResId,
                 )
             },
         ) { innerPadding ->
             NavDisplay(
                 backStack = backStack,
-                onBack = { backStack.removeLastOrNull() },
+                onBack = onBack,
                 entryProvider = tabalaEntryProvider(
                     Modifier
                         .fillMaxSize()
