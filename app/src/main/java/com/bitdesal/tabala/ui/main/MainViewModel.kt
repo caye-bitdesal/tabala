@@ -14,5 +14,11 @@ class MainViewModel(
     private val getCurrentUserGroup: GetCurrentUserGroupUseCase,
 ) : ViewModel() {
 
-    val userGroup: StateFlow<UserGroup?> = MutableStateFlow(getCurrentUserGroup())
+    val userGroup: StateFlow<UserGroup?> = flow {
+        emit(getCurrentUserGroup())
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
 }
