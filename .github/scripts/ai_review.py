@@ -117,9 +117,11 @@ SYSTEM_PROMPT = textwrap.dedent("""\
       ]
     }
 
-    Use verdict="request_changes" when there are error-severity issues.
-    Use verdict="comment" when there are only warnings, suggestions, or questions.
-    Use verdict="approve" only when the code is clean with no issues.
+    Use verdict="request_changes" ONLY when there is at least one issue with severity="error"
+      (crash risk, data loss, security hole, broken logic). Warnings and suggestions alone
+      must NOT block a merge — use verdict="comment" for those.
+    Use verdict="comment" when there are only warnings, suggestions, or open questions.
+    Use verdict="approve" when there are no issues at all (empty issues array).
 """)
 
 # ---------------------------------------------------------------------------
@@ -150,18 +152,39 @@ def get_diff(base_sha: str, head_sha: str) -> str:
 
 
 def get_previous_review_comments(pr) -> list[dict]:
-    """Collect inline review comments from previous review rounds (human only)."""
+    """Collect inline review comments from previous review rounds (human + bot)."""
     comments = []
     for comment in pr.get_review_comments():
-        if "github-actions" in (comment.user.login or ""):
-            continue
         comments.append({
             "file": comment.path,
             "line": comment.original_line,
             "body": comment.body,
             "author": comment.user.login,
+            "is_bot": "github-actions" in (comment.user.login or ""),
         })
     return comments
+
+
+def dismiss_stale_bot_reviews(pr, final_verdict: str) -> None:
+    """Dismiss previous REQUEST_CHANGES reviews posted by this bot.
+
+    Called when the new review has no blocking errors — meaning the PR is
+    now mergeable and the old blocks should be lifted automatically.
+    """
+    if final_verdict == "REQUEST_CHANGES":
+        return  # New errors found; leave old reviews visible.
+
+    dismissed = 0
+    for review in pr.get_reviews():
+        is_bot = "github-actions" in (review.user.login or "")
+        if is_bot and review.state == "CHANGES_REQUESTED":
+            try:
+                review.dismiss("Previous issues addressed or no longer applicable — see latest review.")
+                dismissed += 1
+            except Exception as exc:
+                print(f"[review] Could not dismiss review {review.id}: {exc}")
+    if dismissed:
+        print(f"[review] Dismissed {dismissed} stale REQUEST_CHANGES review(s)")
 
 
 def get_previous_issue_comments(pr) -> list[dict]:
@@ -282,6 +305,29 @@ def format_review_body(review: dict) -> str:
     return "\n".join(lines)
 
 
+def resolve_verdict(review: dict) -> str:
+    """Map the model's verdict to a GitHub event, enforcing severity rules.
+
+    Rules:
+    - REQUEST_CHANGES is only allowed when at least one issue has severity="error".
+      Warnings and suggestions alone must never block a merge.
+    - APPROVE is used when the model says approve (no issues at all).
+    - COMMENT is used for everything in between.
+    """
+    has_errors = any(
+        i.get("severity") == "error" for i in review.get("issues", [])
+    )
+    raw = review.get("verdict", "comment").upper()
+
+    if raw == "REQUEST_CHANGES" and not has_errors:
+        raw = "COMMENT"
+
+    if raw not in ("APPROVE", "REQUEST_CHANGES", "COMMENT"):
+        raw = "COMMENT"
+
+    return raw
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -327,14 +373,16 @@ def main() -> None:
         f"{len(review.get('open_questions', []))} question(s)"
     )
 
-    # ── 4. Post the GitHub PR review ─────────────────────────────────────────
+    # ── 4. Resolve verdict and post the GitHub PR review ────────────────────
+    final_verdict = resolve_verdict(review)
     body = format_review_body(review)
-    raw_verdict = review.get("verdict", "comment").upper()
-    if raw_verdict not in ("APPROVE", "REQUEST_CHANGES", "COMMENT"):
-        raw_verdict = "COMMENT"
 
-    pr.create_review(body=body, event=raw_verdict)
-    print(f"[review] Review posted (event={raw_verdict})")
+    # Dismiss previous bot REQUEST_CHANGES reviews before posting the new one
+    # so the PR is not left in a blocked state when errors are gone.
+    dismiss_stale_bot_reviews(pr, final_verdict)
+
+    pr.create_review(body=body, event=final_verdict)
+    print(f"[review] Review posted (event={final_verdict})")
 
     # ── 5. Post open questions as a separate comment so they are highly visible
     questions = review.get("open_questions", [])
