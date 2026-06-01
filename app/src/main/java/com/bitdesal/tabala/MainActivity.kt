@@ -16,6 +16,7 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteDefaul
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -55,7 +56,7 @@ fun TabalaApp() {
     val backStack = rememberNavBackStack(IniciNavKey)
     val currentDestination = backStack.lastOrNull()?.toTopLevelDestination()
         ?: TopLevelDestinations.first()
-    val onBack: () -> Unit = { backStack.removeLastOrNull() }
+    val onBack: () -> Unit = remember { { backStack.removeLastOrNull() } }
 
     val viewModel: MainViewModel = koinViewModel()
     val userGroup by viewModel.userGroup.collectAsStateWithLifecycle()
