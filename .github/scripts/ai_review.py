@@ -134,8 +134,6 @@ CATEGORY_LABEL = {
     "reusability": "Reusability",
 }
 
-# Gemini finish_reason codes (finish_reason=2 → MAX_TOKENS)
-FINISH_REASON_LABELS = {1: "STOP", 2: "MAX_TOKENS", 3: "SAFETY", 4: "RECITATION", 5: "OTHER"}
 
 
 def run_git(cmd: str) -> str:
@@ -218,18 +216,17 @@ def call_gemini(user_prompt: str) -> dict:
         ),
     )
 
-    # Check for non-STOP finish reasons before accessing text
+    # Check finish_reason before accessing text — the new SDK uses enum values
     candidate = response.candidates[0] if response.candidates else None
     if candidate is None:
         raise RuntimeError("Gemini returned no candidates.")
 
     finish_reason = candidate.finish_reason
-    # finish_reason 1 = STOP (normal), anything else needs attention
-    if finish_reason not in (1, None):
-        label = FINISH_REASON_LABELS.get(finish_reason, str(finish_reason))
+    ok_reasons = (types.FinishReason.STOP, types.FinishReason.FINISH_REASON_UNSPECIFIED, None)
+    if finish_reason not in ok_reasons:
         raise RuntimeError(
-            f"Gemini stopped with finish_reason={finish_reason} ({label}). "
-            "If this is MAX_TOKENS, reduce MAX_DIFF_CHARS or increase max_output_tokens."
+            f"Gemini stopped early with finish_reason={finish_reason}. "
+            "For MAX_TOKENS: reduce MAX_DIFF_CHARS or increase max_output_tokens."
         )
 
     raw = response.text.strip()
