@@ -19,14 +19,15 @@ import subprocess
 import sys
 import textwrap
 
-import google.generativeai as genai
-from github import Github
+from google import genai
+from google.genai import types
+from github import Github, Auth
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Update this to the latest available Gemini model when Google releases new ones.
+# Update to the latest available model when Google releases new ones.
 # See: https://ai.google.dev/gemini-api/docs/models
 GEMINI_MODEL = "gemini-2.5-pro"
 
@@ -88,10 +89,9 @@ SYSTEM_PROMPT = textwrap.dedent("""\
     resolved concerns in `addressed_comments`.
 
     ─────────────────────────────────────────
-    OUTPUT FORMAT — return ONLY valid JSON
+    OUTPUT FORMAT — strict JSON, no extra text
     ─────────────────────────────────────────
-    No markdown fences, no preamble, no trailing text.
-    Schema (all arrays may be empty []):
+    Return ONLY a JSON object matching the schema below. All arrays may be empty [].
 
     {
       "summary": "2–3 sentence overall assessment of the PR",
@@ -134,6 +134,9 @@ CATEGORY_LABEL = {
     "reusability": "Reusability",
 }
 
+# Gemini finish_reason codes (finish_reason=2 → MAX_TOKENS)
+FINISH_REASON_LABELS = {1: "STOP", 2: "MAX_TOKENS", 3: "SAFETY", 4: "RECITATION", 5: "OTHER"}
+
 
 def run_git(cmd: str) -> str:
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
@@ -149,18 +152,18 @@ def get_diff(base_sha: str, head_sha: str) -> str:
 
 
 def get_previous_review_comments(pr) -> list[dict]:
-    """Collect inline review comments left by the bot in previous rounds."""
-    bot_comments = []
+    """Collect inline review comments from previous review rounds (human only)."""
+    comments = []
     for comment in pr.get_review_comments():
         if "github-actions" in (comment.user.login or ""):
             continue
-        bot_comments.append({
+        comments.append({
             "file": comment.path,
             "line": comment.original_line,
             "body": comment.body,
             "author": comment.user.login,
         })
-    return bot_comments
+    return comments
 
 
 def get_previous_issue_comments(pr) -> list[dict]:
@@ -202,18 +205,35 @@ def build_user_prompt(
 
 
 def call_gemini(user_prompt: str) -> dict:
-    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-    model = genai.GenerativeModel(
-        model_name=GEMINI_MODEL,
-        system_instruction=SYSTEM_PROMPT,
-        generation_config=genai.GenerationConfig(
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
             temperature=0.2,
-            max_output_tokens=4096,
+            max_output_tokens=8192,
+            response_mime_type="application/json",
         ),
     )
-    response = model.generate_content(user_prompt)
+
+    # Check for non-STOP finish reasons before accessing text
+    candidate = response.candidates[0] if response.candidates else None
+    if candidate is None:
+        raise RuntimeError("Gemini returned no candidates.")
+
+    finish_reason = candidate.finish_reason
+    # finish_reason 1 = STOP (normal), anything else needs attention
+    if finish_reason not in (1, None):
+        label = FINISH_REASON_LABELS.get(finish_reason, str(finish_reason))
+        raise RuntimeError(
+            f"Gemini stopped with finish_reason={finish_reason} ({label}). "
+            "If this is MAX_TOKENS, reduce MAX_DIFF_CHARS or increase max_output_tokens."
+        )
+
     raw = response.text.strip()
-    # Strip accidental markdown code fences
+    # Strip accidental markdown code fences (shouldn't happen with response_mime_type=json)
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1]
         raw = raw.rsplit("```", 1)[0]
@@ -287,7 +307,7 @@ def main() -> None:
     print(f"[review] Diff size: {len(diff):,} chars")
 
     # ── 2. Fetch PR context from GitHub ─────────────────────────────────────
-    g = Github(token)
+    g = Github(auth=Auth.Token(token))
     repo = g.get_repo(repo_name)
     pr = repo.get_pull(pr_number)
 
@@ -298,7 +318,7 @@ def main() -> None:
         f"{len(issue_comments)} issue comment(s)"
     )
 
-    # ── 3. Call Claude ───────────────────────────────────────────────────────
+    # ── 3. Call Gemini ───────────────────────────────────────────────────────
     prompt = build_user_prompt(
         diff, pr.title, pr.body or "", review_comments, issue_comments
     )
