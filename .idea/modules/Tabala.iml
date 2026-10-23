@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module version="4">
+  <component name="AdditionalModuleElements">
+    <content url="file:///workspace/tabala" dumb="true">
+      <excludeFolder url="file:///workspace/tabala/.claude" />
+      <excludeFolder url="file:///workspace/tabala/.cursor" />
+      <excludeFolder url="file:///workspace/tabala/.idea" />
+      <excludeFolder url="file:///workspace/tabala/.idea/caches" />
+      <excludeFolder url="file:///workspace/tabala/.opencode" />
+      <excludeFolder url="file:///workspace/tabala/.specify" />
+    </content>
+  </component>
+</module>
