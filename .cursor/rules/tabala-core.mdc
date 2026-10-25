@@ -1,0 +1,12 @@
+---
+description: Shared models and domain in core
+globs: core/**/*.kt
+alwaysApply: false
+---
+
+# Core (`:core`)
+
+- Pure Kotlin multiplatform: `@Serializable` types, enums, validation helpers — **no** Compose, Koin, Ktor, or SQL.
+- Match `backend/data-model/data-model.json`: English fields, ISO 8601 dates, ID references, `GeoPoint`.
+- Computed fields documented in model KDoc (`isMinor` from `birthDate`, derived relation sides).
+- Keep modules free of Android/iOS-specific APIs; use expect/actual only when unavoidable and minimal.

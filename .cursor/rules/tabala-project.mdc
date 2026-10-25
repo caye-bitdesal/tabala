@@ -1,0 +1,15 @@
+---
+description: Tabala KMP — overview, stack, and agent workflow
+alwaysApply: true
+---
+
+# Tabala (Muixeranga)
+
+Read **AGENTS.md** at the repo root before non-trivial changes.
+
+- Monorepo: `:core`, `:server`, `:app:shared`, `:app:androidApp`, `:app:desktopApp`, `:app:webApp`.
+- **Koin** for DI; **SQLite** on server (Flyway/SQLDelight); Ktor JSON API; Firebase Auth tokens verified on server.
+- Shared UI + ViewModels in `app/shared/src/commonMain`; platform code in `*Main` source sets only when needed.
+- Banned: Hilt, Dagger, Metro, Room, Retrofit for new code, XML screens.
+- Server owns authoritative data; client may cache on Android/JVM via SQLDelight — not on JS/Wasm without an explicit design.
+- Smallest correct diff; do not commit unless the user asks.

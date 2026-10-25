@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """
-AI-powered PR code review for the Tabala Android project.
+AI-powered PR code review for Tabala (Kotlin Multiplatform).
 
-Runs on every PR open/update. Uses Gemini to review changed Kotlin, Gradle, and
-XML files, then posts a structured GitHub PR review covering:
-  - Bugs
-  - Android platform correctness
-  - Code understandability
-  - Reusability
+Runs on every PR open/update. Uses Gemini to review changed Kotlin, Gradle,
+SQLDelight (.sq), and config files, then posts a structured GitHub PR review.
+See AGENTS.md at the repo root for stack details.
 
 On subsequent pushes to the same PR the agent re-reads previous review comments
 and notes which concerns have been addressed vs. which remain open.
@@ -32,7 +29,7 @@ from github import Github, Auth
 GEMINI_MODEL = "gemini-2.5-pro"
 
 # Only review these file types (keeps the diff focused and tokens down)
-REVIEWED_EXTENSIONS = ("*.kt", "*.kts", "*.xml", "*.toml")
+REVIEWED_EXTENSIONS = ("*.kt", "*.kts", "*.sq", "*.xml", "*.toml")
 
 # Hard cap on diff size sent to the model (characters, not tokens)
 MAX_DIFF_CHARS = 90_000
@@ -42,34 +39,38 @@ MAX_DIFF_CHARS = 90_000
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = textwrap.dedent("""\
-    You are a senior Android engineer performing a thorough code review for Tabala,
-    an Android application. The project's tech stack is:
+    You are a senior Kotlin engineer performing a thorough code review for Tabala,
+    a Kotlin Multiplatform project (Muixeranga d'Elx). Read AGENTS.md at the repo
+    root when reasoning about architecture. Typical stack:
 
     - Language: Kotlin (idiomatic style required)
-    - UI: 100% Jetpack Compose with Material 3
-    - Architecture: MVVM + Clean Architecture, single Activity
-    - Dependency Injection: Koin only (Hilt and Dagger are banned)
-    - Navigation: Jetpack Navigation 3 — NavKey, NavBackStack, NavDisplay, entryProvider
-    - Reactivity: Kotlin Coroutines, StateFlow / SharedFlow, lifecycle-aware collection
-    - Persistence: Room (SQLite)
-    - Networking: Retrofit + OkHttp
-    - Resources: only strings.xml, themes.xml, and colors.xml may be XML; everything else is Compose
+    - Modules: :core (DTOs), :server (Ktor + SQLite + Flyway), :app:shared
+      (Compose Multiplatform + Ktor client + Koin), :app:androidApp, :app:desktopApp,
+      :app:webApp
+    - UI: Compose Multiplatform + Material 3 in commonMain
+    - Architecture: MVVM + repositories
+    - Dependency Injection: Koin only (Hilt, Dagger, Metro banned)
+    - Backend: Ktor REST, kotlinx.serialization JSON; Firebase ID token verification
+    - Persistence: SQLite authoritative on server; optional SQLDelight cache on
+      Android/JVM — not JS/Wasm unless explicitly designed
+    - Reactivity: Coroutines, StateFlow, ViewModels in shared code
 
     ─────────────────────────────────────────
     REVIEW CRITERIA — comment only on these:
     ─────────────────────────────────────────
     1. BUGS
-       Logic errors, null/crash risks, incorrect API usage, resource or memory leaks,
-       threading violations, broken edge cases, improper lifecycle handling.
+       Logic errors, null/crash risks, incorrect API usage, leaks, threading,
+       edge cases, SQL/API mismatches, missing server validation, auth/role gaps.
 
-    2. ANDROID_CORRECTNESS
-       Deviations from Android and Jetpack documentation:
-       • Wrong Compose side-effect (LaunchedEffect vs SideEffect vs DisposableEffect)
-       • Incorrect coroutine scope (viewModelScope vs lifecycleScope vs rememberCoroutineScope)
-       • Missing lifecycle-awareness (collectAsStateWithLifecycle vs collectAsState)
-       • Improper state hoisting or broken unidirectional data flow
-       • Misuse of Navigation 3 APIs (e.g. navigating inside composition instead of callbacks)
-       • Koin injection outside composable or outside the Koin context
+    2. PLATFORM_CORRECTNESS
+       KMP, Ktor, Koin, SQLDelight/SQLite, Compose Multiplatform:
+       • Wrong Compose side-effect or coroutine scope
+       • Koin modules / koinViewModel / test doubles misused
+       • Ktor client/server contract or status/error body inconsistencies
+       • Schema or query mismatches with :core DTOs
+       • Client cache vs server source of truth
+       • RGPD/public API exposure (consent, minors, internal fields)
+       • Banned stacks on new code: Hilt, Dagger, Metro, Room, Retrofit
 
     3. UNDERSTANDABILITY
        Unclear or misleading names, functions that do more than one thing, missing
@@ -77,9 +78,8 @@ SYSTEM_PROMPT = textwrap.dedent("""\
        deeply nested code that should be extracted.
 
     4. REUSABILITY
-       Duplicated logic that already exists (or could be abstracted), new utilities that
-       duplicate platform APIs, components that should be extracted to ui/components/,
-       missed opportunity to generalise an existing function.
+       Duplicated logic, missed shared abstractions in :core or commonMain,
+       platform-specific code that should be expect/actual.
 
     ─────────────────────────────────────────
     PREVIOUS REVIEW COMMENTS
@@ -101,7 +101,7 @@ SYSTEM_PROMPT = textwrap.dedent("""\
           "file": "relative/path/to/File.kt",
           "line": 42,
           "severity": "error" | "warning" | "suggestion",
-          "category": "bug" | "android_correctness" | "understandability" | "reusability",
+          "category": "bug" | "platform_correctness" | "understandability" | "reusability",
           "title": "Short imperative title",
           "body": "Detailed explanation and a concrete suggestion or code snippet"
         }
@@ -131,7 +131,8 @@ SYSTEM_PROMPT = textwrap.dedent("""\
 SEVERITY_EMOJI = {"error": "🔴", "warning": "🟡", "suggestion": "🔵"}
 CATEGORY_LABEL = {
     "bug": "Bug",
-    "android_correctness": "Android Correctness",
+    "platform_correctness": "Platform Correctness",
+    "android_correctness": "Platform Correctness",
     "understandability": "Understandability",
     "reusability": "Reusability",
 }

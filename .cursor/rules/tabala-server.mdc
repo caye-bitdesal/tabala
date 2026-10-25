@@ -1,0 +1,16 @@
+---
+description: Ktor server, SQLite, auth, and API conventions
+globs: server/**/*.kt
+alwaysApply: false
+---
+
+# Server (`:server`)
+
+- JVM Ktor only; configure forwarded headers behind Caddy (`X-Forwarded-*`).
+- Verify Firebase ID tokens; map to `User` + role; **401/403** for missing/insufficient auth.
+- Public routes: only what RGPD allows (consent, no minors public, no internal notes/amounts).
+- SQLite: WAL mode for Litestream; migrations via Flyway; one-sided relations persisted per data model.
+- Validate input at boundaries; consistent JSON error bodies and HTTP status codes.
+- No password storage; no blocking work on the Netty event loop — use appropriate dispatchers.
+- Koin modules for routes/services/repositories; share DTOs from `:core`.
+- Tests in `:server:test` for auth matrix, public filtering, and critical SQL paths.

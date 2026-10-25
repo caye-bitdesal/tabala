@@ -1,0 +1,15 @@
+---
+description: Compose Multiplatform UI and ViewModels in app/shared
+globs: app/shared/**/*.kt
+alwaysApply: false
+---
+
+# Shared UI (`:app:shared`)
+
+- MVVM: `*UiState` + `StateFlow`, events into ViewModel; repositories hide Ktor/SQL details.
+- Koin: modules in `commonMain`; `koinViewModel()` / injected constructors — never resolve dependencies inside `@Composable` without Koin API.
+- Prefer `collectAsStateWithLifecycle()` on Android; use lifecycle-compose on other targets when available.
+- Navigation and one-off effects belong in ViewModel/callbacks, not random `LaunchedEffect` chains.
+- Reuse `:core` models; do not duplicate DTOs in UI packages.
+- File-level constants and small helpers immediately after imports (Weel-style).
+- Tests: `commonTest` / `jvmTest` for ViewModels and repository fakes before Robolectric/device UI.
