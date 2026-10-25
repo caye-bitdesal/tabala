@@ -18,7 +18,7 @@ Public web (Astro) and the management webapp are separate deployables; they talk
 | DI | **Koin** (`koin-core`, `koin-compose`, platform modules) |
 | Client networking | Ktor Client + kotlinx.serialization (JSON) |
 | Server | Ktor (JVM 21), Flyway migrations, REST JSON API |
-| Persistence | **SQLite** — authoritative on **`:server`** (SQLDelight or JDBC + Flyway schema); optional **SQLDelight cache** on Android/JVM clients when offline/read performance is needed |
+| Persistence | **SQLite** — authoritative on **`:server`**: schema in SQLDelight migrations (`server/src/main/sqldelight/migrations/V<n>__<name>.sqm`), exported to `db/migration/*.sql` and applied by **Flyway** at startup; queries via SQLDelight. Optional **SQLDelight cache** on Android/JVM clients when offline/read performance is needed |
 | Auth | **Firebase Authentication** (Google + email/password); backend verifies ID tokens, stores UID + role — **no passwords on server** |
 | Reactivity | Coroutines, `StateFlow` / `SharedFlow`, ViewModels in `commonMain` where possible |
 | Serialization | kotlinx.serialization; contract per `backend/data-model/data-model.json` (IDs, ISO 8601 dates, `GeoPoint`) |
