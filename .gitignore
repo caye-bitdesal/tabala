@@ -18,5 +18,8 @@ captures
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
 
+# Kotlin/JS Gradle-generated Yarn lockfiles (no package.json for Dependabot)
+kotlin-js-store/
+
 # Local server database
 server/data/
