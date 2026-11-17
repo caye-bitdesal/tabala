@@ -1,49 +1,43 @@
-This is a Kotlin Multiplatform project targeting Android, Web, Desktop (JVM), Server.
+# Tabala
 
-* [/app/shared](./app/shared/src) is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-  - [commonMain](./app/shared/src/commonMain/kotlin) is for code that’s common for all targets.
-  - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-    For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-    the [iosMain](./app/shared/src/iosMain/kotlin) folder would be the right place for such calls.
-    Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./app/shared/src/jvmMain/kotlin)
-    folder is the appropriate location.
+Kotlin Multiplatform monorepo for **Muixeranga d'Elx** colla operations: shared domain models, a Ktor API on the VPS, and Compose Multiplatform clients (Android, desktop JVM, web JS/Wasm). The public Astro site and other management deployables live outside this repository; they talk to `api.<domain>` with Firebase ID tokens where required.
 
-* [/core](./core/src) is for the code that will be shared between all targets in the project.
-  The most important subfolder is [commonMain](./core/src/commonMain/kotlin). If preferred, you
-  can add code to the platform-specific folders here too.
+**Current state (early scaffold):** the Gradle layout and targets are in place; product features are mostly ahead of the code.
 
-* [/server](./server/src/main/kotlin) is for the Ktor server application.
+| Area | Status |
+|------|--------|
+| **`:core`** | Shared KMP library wired into server and apps; only placeholder helpers today — DTOs aligned with the backend data model are still to land here. |
+| **`:server`** | Ktor on Netty (`GET /` hello), SQLite with WAL + foreign keys, Flyway on startup. **V1** SQLDelight migration defines the full Muixeranga schema (seed data includes position types). REST, Firebase auth, and file storage are not implemented yet. |
+| **`:app:shared`** | Compose Material 3 template screen (`App` + greeting); no navigation, ViewModels, or API client yet. |
+| **Clients** | `:app:androidApp`, `:app:desktopApp`, `:app:webApp` (JS and Wasm browser targets) bootstrap and embed shared UI. |
+
+For module boundaries and deployment intent, see [docs/module-schema.md](./docs/module-schema.md). Agent and contribution conventions: [AGENTS.md](./AGENTS.md).
+
+### Stack
+
+Kotlin **2.4**, Compose Multiplatform, **Koin** (DI as features grow), **Ktor** + kotlinx.serialization on the server, **SQLite** (SQLDelight queries, Flyway migrations), **Firebase Auth** on clients (token verification on server — planned).
 
 ### Running the apps
 
-Use the run configurations provided by the run widget in your IDE's toolbar. You can also use these commands and options:
+Use the run configurations in your IDE, or:
 
-- Android app: `./gradlew :app:androidApp:assembleDebug`
-- Desktop app:
-  - Hot reload: `./gradlew :app:desktopApp:hotRun --auto`
-  - Standard run: `./gradlew :app:desktopApp:run`
-- Server: `./gradlew :server:run`
-- Web app:
-  - Wasm target (faster, modern browsers): `./gradlew :app:webApp:wasmJsBrowserDevelopmentRun`
-  - JS target (slower, supports older browsers): `./gradlew :app:webApp:jsBrowserDevelopmentRun`
+- Android: `./gradlew :app:androidApp:assembleDebug`
+- Desktop: `./gradlew :app:desktopApp:run` (hot reload: `:app:desktopApp:hotRun --auto`)
+- Server: `./gradlew :server:run` — listens on `8080`; default DB `data/muixeranga.db` (override with `DB_PATH`)
+- Web:
+  - Wasm (preferred): `./gradlew :app:webApp:wasmJsBrowserDevelopmentRun`
+  - JS: `./gradlew :app:webApp:jsBrowserDevelopmentRun`
+
+`kotlin-js-store/` is gitignored; Yarn lockfiles are generated locally by the Kotlin/JS Gradle plugin when you build web targets.
 
 ### Running tests
 
-Use the run button in your IDE's editor gutter, or run tests using Gradle tasks:
+- Server: `./gradlew :server:test`
+- Shared (desktop/JVM): `./gradlew :app:shared:jvmTest`
+- Android host tests: `./gradlew :app:shared:testAndroidHostTest`
+- Web: `./gradlew :app:shared:jsTest` or `:app:shared:wasmJsTest`
 
-- Android tests: `./gradlew :app:shared:testAndroidHostTest`
-- Desktop tests: `./gradlew :app:shared:jvmTest`
-- Server tests: `./gradlew :server:test`
-- Web tests:
-  - Wasm target: `./gradlew :app:shared:wasmJsTest`
-  - JS target: `./gradlew :app:shared:jsTest`
+### Learn more
 
----
-
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html),
-[Compose Multiplatform](https://kotlinlang.org/compose-multiplatform/),
-[Kotlin/Wasm](https://kotl.in/wasm/)…
-
-We would appreciate your feedback on Compose/Web and Kotlin/Wasm in the public Slack channel [#compose-web](https://slack-chats.kotlinlang.org/c/compose-web).
-If you face any issues, please report them on [YouTrack](https://youtrack.jetbrains.com/newIssue?project=CMP).
+- [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)
+- [Compose Multiplatform](https://kotlinlang.org/compose-multiplatform/)
