@@ -2,9 +2,9 @@ name: AI Code Review
 
 on:
   pull_request:
+    branches: [main]
     types: [opened, synchronize, reopened]
 
-# Cancel any in-progress review for the same PR when new commits arrive
 concurrency:
   group: ai-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -16,7 +16,6 @@ permissions:
 jobs:
   review:
     runs-on: ubuntu-latest
-    # Skip bot-created PRs (Dependabot, Renovate, etc.)
     if: >
       github.actor != 'dependabot[bot]' &&
       github.actor != 'renovate[bot]'
@@ -25,7 +24,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Fetch enough history to produce a meaningful diff
           fetch-depth: 0
 
       - name: Set up Python
@@ -45,4 +43,5 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_TITLE: ${{ github.event.pull_request.title }}
+          PROJECT_NAME: "Tabala"
         run: python .github/scripts/ai_review.py

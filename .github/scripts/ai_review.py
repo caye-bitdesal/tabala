@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
-AI-powered PR code review for Tabala (Kotlin Multiplatform).
+AI-powered PR code review for Tabala.
 
 Runs on every PR open/update. Uses Gemini to review changed Kotlin, Gradle,
-SQLDelight (.sq), and config files, then posts a structured GitHub PR review.
-See AGENTS.md at the repo root for stack details.
-
-On subsequent pushes to the same PR the agent re-reads previous review comments
-and notes which concerns have been addressed vs. which remain open.
+SQLDelight, and config files, then posts a structured GitHub PR review.
 """
+
+from __future__ import annotations
 
 import json
 import os
@@ -18,59 +16,47 @@ import textwrap
 
 from google import genai
 from google.genai import types
-from github import Github, Auth
+from github import Auth, Github
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
-# Update to the latest available model when Google releases new ones.
-# See: https://ai.google.dev/gemini-api/docs/models
-GEMINI_MODEL = "gemini-2.5-pro"
-
-# Only review these file types (keeps the diff focused and tokens down)
+GEMINI_MODEL = "gemini-3.1-pro-preview"
+PROJECT_NAME = os.environ.get("PROJECT_NAME", "Tabala")
 REVIEWED_EXTENSIONS = ("*.kt", "*.kts", "*.sq", "*.xml", "*.toml")
-
-# Hard cap on diff size sent to the model (characters, not tokens)
 MAX_DIFF_CHARS = 90_000
 
-# ---------------------------------------------------------------------------
-# Prompt
-# ---------------------------------------------------------------------------
-
-SYSTEM_PROMPT = textwrap.dedent("""\
-    You are a senior Kotlin engineer performing a thorough code review for Tabala,
-    a Kotlin Multiplatform project (Muixeranga d'Elx). Read AGENTS.md at the repo
-    root when reasoning about architecture. Typical stack:
+SYSTEM_PROMPT = textwrap.dedent(f"""\
+    You are a senior Kotlin engineer performing a thorough code review for
+    {PROJECT_NAME}, a Kotlin Multiplatform project. Typical stack:
 
     - Language: Kotlin (idiomatic style required)
-    - Modules: :core (DTOs), :server (Ktor + SQLite + Flyway), :app:shared
-      (Compose Multiplatform + Ktor client + Koin), :app:androidApp, :app:desktopApp,
-      :app:webApp
-    - UI: Compose Multiplatform + Material 3 in commonMain
-    - Architecture: MVVM + repositories
-    - Dependency Injection: Koin only (Hilt, Dagger, Metro banned)
-    - Backend: Ktor REST, kotlinx.serialization JSON; Firebase ID token verification
-    - Persistence: SQLite authoritative on server; optional SQLDelight cache on
-      Android/JVM — not JS/Wasm unless explicitly designed
-    - Reactivity: Coroutines, StateFlow, ViewModels in shared code
+    - Architecture: KMP with :core (DTOs), :server (Ktor + SQLite + Flyway),
+      :app:shared (Compose Multiplatform UI + Ktor client + Koin)
+    - Targets: Android, Desktop (JVM), Web (JS/Wasm); server is JVM-only
+    - UI: Jetpack Compose Multiplatform with Material 3
+    - Backend: Ktor REST API, JSON via kotlinx.serialization; Firebase token verification
+    - Persistence: SQLite on server (SQLDelight and/or Flyway); optional SQLDelight
+      cache on Android/JVM — remote-only on JS/Wasm unless explicitly designed
+    - Dependency Injection: Koin (Hilt, Dagger, Metro banned)
+    - Reactivity: Kotlin Coroutines, ViewModel in shared UI
 
-    ─────────────────────────────────────────
-    REVIEW CRITERIA — comment only on these:
-    ─────────────────────────────────────────
+    Read AGENTS.md at the repo root when present — it overrides generic assumptions.
+
+    Review criteria — comment only on these:
+
     1. BUGS
-       Logic errors, null/crash risks, incorrect API usage, leaks, threading,
-       edge cases, SQL/API mismatches, missing server validation, auth/role gaps.
+       Logic errors, null/crash risks, incorrect API usage, resource or memory leaks,
+       threading violations, broken edge cases, improper lifecycle handling,
+       SQL/API contract mismatches, missing validation on server routes.
 
     2. PLATFORM_CORRECTNESS
-       KMP, Ktor, Koin, SQLDelight/SQLite, Compose Multiplatform:
-       • Wrong Compose side-effect or coroutine scope
-       • Koin modules / koinViewModel / test doubles misused
-       • Ktor client/server contract or status/error body inconsistencies
-       • Schema or query mismatches with :core DTOs
-       • Client cache vs server source of truth
-       • RGPD/public API exposure (consent, minors, internal fields)
-       • Banned stacks on new code: Hilt, Dagger, Metro, Room, Retrofit
+       Deviations from KMP, Ktor, SQLDelight, Koin, or Compose Multiplatform best practices:
+       - Wrong Compose side-effect (LaunchedEffect vs SideEffect vs DisposableEffect)
+       - Incorrect coroutine scope (viewModelScope vs rememberCoroutineScope)
+       - Client cache contradicting server source of truth without clear strategy
+       - Koin module/scope mistakes (startKoin, koinViewModel, test doubles)
+       - Ktor ContentNegotiation / status code / error body inconsistencies
+       - SQLDelight or Flyway schema mismatches with :core DTOs
+       - Introducing banned stacks (Hilt, Dagger, Metro, Room, Retrofit on new code)
+       - Public API or UI exposing RGPD-forbidden data (minors, consent, internal fields)
 
     3. UNDERSTANDABILITY
        Unclear or misleading names, functions that do more than one thing, missing
@@ -78,33 +64,26 @@ SYSTEM_PROMPT = textwrap.dedent("""\
        deeply nested code that should be extracted.
 
     4. REUSABILITY
-       Duplicated logic, missed shared abstractions in :core or commonMain,
-       platform-specific code that should be expect/actual.
+       Duplicated logic, utilities that duplicate platform APIs, components that
+       should be shared in app/shared, missed opportunity to generalise existing code.
 
-    ─────────────────────────────────────────
-    PREVIOUS REVIEW COMMENTS
-    ─────────────────────────────────────────
-    If previous review comments are included in the prompt, determine for each one
-    whether the latest commits appear to have addressed the concern. List clearly
-    resolved concerns in `addressed_comments`.
+    If previous review comments are included, determine which concerns were addressed
+    and list them in addressed_comments.
 
-    ─────────────────────────────────────────
-    OUTPUT FORMAT — strict JSON, no extra text
-    ─────────────────────────────────────────
-    Return ONLY a JSON object matching the schema below. All arrays may be empty [].
+    Return ONLY a JSON object matching this schema. All arrays may be empty [].
 
-    {
-      "summary": "2–3 sentence overall assessment of the PR",
+    {{
+      "summary": "2-3 sentence overall assessment of the PR",
       "verdict": "approve" | "request_changes" | "comment",
       "issues": [
-        {
+        {{
           "file": "relative/path/to/File.kt",
           "line": 42,
           "severity": "error" | "warning" | "suggestion",
           "category": "bug" | "platform_correctness" | "understandability" | "reusability",
           "title": "Short imperative title",
           "body": "Detailed explanation and a concrete suggestion or code snippet"
-        }
+        }}
       ],
       "open_questions": [
         "A specific question for the PR author that needs an answer before merging?"
@@ -115,87 +94,77 @@ SYSTEM_PROMPT = textwrap.dedent("""\
       "praise": [
         "One specific thing done well in this PR"
       ]
-    }
+    }}
 
-    Use verdict="request_changes" ONLY when there is at least one issue with severity="error"
-      (crash risk, data loss, security hole, broken logic). Warnings and suggestions alone
-      must NOT block a merge — use verdict="comment" for those.
-    Use verdict="comment" when there are only warnings, suggestions, or open questions.
-    Use verdict="approve" when there are no issues at all (empty issues array).
+    Use verdict="request_changes" ONLY when there is at least one issue with severity="error".
+    Warnings and suggestions alone must NOT block a merge — use verdict="comment".
+    Use verdict="approve" when there are no issues at all.
 """)
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-SEVERITY_EMOJI = {"error": "🔴", "warning": "🟡", "suggestion": "🔵"}
+SEVERITY_LABEL = {
+    "error": "[error]",
+    "warning": "[warning]",
+    "suggestion": "[suggestion]",
+}
 CATEGORY_LABEL = {
     "bug": "Bug",
     "platform_correctness": "Platform Correctness",
-    "android_correctness": "Platform Correctness",
     "understandability": "Understandability",
     "reusability": "Reusability",
 }
 
 
-
 def run_git(cmd: str) -> str:
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=False)
     return result.stdout
 
 
 def get_diff(base_sha: str, head_sha: str) -> str:
-    extensions = " ".join(f"'{e}'" for e in REVIEWED_EXTENSIONS)
+    extensions = " ".join(f"'{extension}'" for extension in REVIEWED_EXTENSIONS)
     diff = run_git(f"git diff {base_sha}...{head_sha} -- {extensions}")
     if len(diff) > MAX_DIFF_CHARS:
-        diff = diff[:MAX_DIFF_CHARS] + "\n\n[diff truncated — exceeds size limit]"
+        diff = diff[:MAX_DIFF_CHARS] + "\n\n[diff truncated: exceeds size limit]"
     return diff
 
 
 def get_previous_review_comments(pr) -> list[dict]:
-    """Collect inline review comments from previous review rounds (human + bot)."""
     comments = []
     for comment in pr.get_review_comments():
-        comments.append({
-            "file": comment.path,
-            "line": comment.original_line,
-            "body": comment.body,
-            "author": comment.user.login,
-            "is_bot": "github-actions" in (comment.user.login or ""),
-        })
+        comments.append(
+            {
+                "file": comment.path,
+                "line": comment.original_line,
+                "body": comment.body,
+                "author": comment.user.login,
+            }
+        )
     return comments
 
 
-def dismiss_stale_bot_reviews(pr, final_verdict: str) -> None:
-    """Dismiss previous REQUEST_CHANGES reviews posted by this bot.
-
-    Called when the new review has no blocking errors — meaning the PR is
-    now mergeable and the old blocks should be lifted automatically.
-    """
-    if final_verdict == "REQUEST_CHANGES":
-        return  # New errors found; leave old reviews visible.
-
-    dismissed = 0
-    for review in pr.get_reviews():
-        is_bot = "github-actions" in (review.user.login or "")
-        if is_bot and review.state == "CHANGES_REQUESTED":
-            try:
-                review.dismiss("Previous issues addressed or no longer applicable — see latest review.")
-                dismissed += 1
-            except Exception as exc:
-                print(f"[review] Could not dismiss review {review.id}: {exc}")
-    if dismissed:
-        print(f"[review] Dismissed {dismissed} stale REQUEST_CHANGES review(s)")
-
-
 def get_previous_issue_comments(pr) -> list[dict]:
-    """Collect general (non-review) PR comments from humans."""
     comments = []
     for comment in pr.get_issue_comments():
         if "github-actions" in (comment.user.login or ""):
             continue
         comments.append({"author": comment.user.login, "body": comment.body})
     return comments
+
+
+def dismiss_stale_bot_reviews(pr, final_verdict: str) -> None:
+    if final_verdict == "REQUEST_CHANGES":
+        return
+
+    dismissed = 0
+    for review in pr.get_reviews():
+        is_bot = "github-actions" in (review.user.login or "")
+        if is_bot and review.state == "CHANGES_REQUESTED":
+            try:
+                review.dismiss("Previous issues addressed or no longer applicable. See latest review.")
+                dismissed += 1
+            except Exception as exc:
+                print(f"[review] Could not dismiss review {review.id}: {exc}")
+    if dismissed:
+        print(f"[review] Dismissed {dismissed} stale REQUEST_CHANGES review(s)")
 
 
 def build_user_prompt(
@@ -206,6 +175,7 @@ def build_user_prompt(
     issue_comments: list[dict],
 ) -> str:
     parts = [
+        f"## Project\n{PROJECT_NAME}\n",
         f"## PR Title\n{pr_title}\n",
         f"## PR Description\n{pr_body or '*(no description provided)*'}\n",
         f"## Diff\n```diff\n{diff}\n```\n",
@@ -213,15 +183,16 @@ def build_user_prompt(
 
     if review_comments:
         parts.append("## Previous Inline Review Comments\n")
-        for c in review_comments:
+        for comment in review_comments:
             parts.append(
-                f"- **{c['file']}:{c['line']}** — {c['author']}: {c['body']}\n"
+                f"- **{comment['file']}:{comment['line']}** - "
+                f"{comment['author']}: {comment['body']}\n"
             )
 
     if issue_comments:
         parts.append("## Previous PR Discussion Comments\n")
-        for c in issue_comments:
-            parts.append(f"- **{c['author']}**: {c['body']}\n")
+        for comment in issue_comments:
+            parts.append(f"- **{comment['author']}**: {comment['body']}\n")
 
     return "\n".join(parts)
 
@@ -235,18 +206,21 @@ def call_gemini(user_prompt: str) -> dict:
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
             temperature=0.2,
-            max_output_tokens=8192,
+            max_output_tokens=65536,
             response_mime_type="application/json",
         ),
     )
 
-    # Check finish_reason before accessing text — the new SDK uses enum values
     candidate = response.candidates[0] if response.candidates else None
     if candidate is None:
         raise RuntimeError("Gemini returned no candidates.")
 
     finish_reason = candidate.finish_reason
-    ok_reasons = (types.FinishReason.STOP, types.FinishReason.FINISH_REASON_UNSPECIFIED, None)
+    ok_reasons = (
+        types.FinishReason.STOP,
+        types.FinishReason.FINISH_REASON_UNSPECIFIED,
+        None,
+    )
     if finish_reason not in ok_reasons:
         raise RuntimeError(
             f"Gemini stopped early with finish_reason={finish_reason}. "
@@ -254,7 +228,6 @@ def call_gemini(user_prompt: str) -> dict:
         )
 
     raw = response.text.strip()
-    # Strip accidental markdown code fences (shouldn't happen with response_mime_type=json)
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1]
         raw = raw.rsplit("```", 1)[0]
@@ -262,62 +235,52 @@ def call_gemini(user_prompt: str) -> dict:
 
 
 def format_review_body(review: dict) -> str:
-    """Convert the structured review dict into a GitHub-flavoured Markdown body."""
-    lines = ["## 🤖 AI Code Review\n", review["summary"], ""]
+    lines = [f"## AI Code Review for {PROJECT_NAME}\n", review["summary"], ""]
 
     issues = review.get("issues", [])
     if issues:
         lines.append("---\n### Issues\n")
         for issue in issues:
-            emoji = SEVERITY_EMOJI.get(issue["severity"], "⚪")
-            cat = CATEGORY_LABEL.get(issue["category"], issue["category"])
+            severity = SEVERITY_LABEL.get(issue["severity"], "[info]")
+            category = CATEGORY_LABEL.get(issue["category"], issue["category"])
             location = f"`{issue['file']}`"
             if issue.get("line"):
                 location += f" line {issue['line']}"
-            lines.append(f"#### {emoji} {issue['title']}")
-            lines.append(f"**Category:** {cat} &nbsp;|&nbsp; **Location:** {location}\n")
+            lines.append(f"#### {severity} {issue['title']}")
+            lines.append(f"**Category:** {category} | **Location:** {location}\n")
             lines.append(f"{issue['body']}\n")
 
     questions = review.get("open_questions", [])
     if questions:
-        lines.append("---\n### ❓ Open Questions\n")
-        for q in questions:
-            lines.append(f"- {q}")
+        lines.append("---\n### Open Questions\n")
+        for question in questions:
+            lines.append(f"- {question}")
         lines.append("")
 
     addressed = review.get("addressed_comments", [])
     if addressed:
-        lines.append("---\n### ✅ Addressed from Previous Review\n")
+        lines.append("---\n### Addressed from Previous Review\n")
         for item in addressed:
             lines.append(f"- {item}")
         lines.append("")
 
     praise = review.get("praise", [])
     if praise:
-        lines.append("---\n### 👍 Well Done\n")
+        lines.append("---\n### Well Done\n")
         for item in praise:
             lines.append(f"- {item}")
         lines.append("")
 
     lines.append(
-        "---\n*Generated automatically by the AI Code Review workflow using "
-        f"**{GEMINI_MODEL}**. A human reviewer must still approve before merging.*"
+        "---\n"
+        f"*Generated automatically for {PROJECT_NAME} by the AI Code Review workflow "
+        f"using **{GEMINI_MODEL}**. A human reviewer must still approve before merging.*"
     )
     return "\n".join(lines)
 
 
 def resolve_verdict(review: dict) -> str:
-    """Map the model's verdict to a GitHub event, enforcing severity rules.
-
-    Rules:
-    - REQUEST_CHANGES is only allowed when at least one issue has severity="error".
-      Warnings and suggestions alone must never block a merge.
-    - APPROVE is used when the model says approve (no issues at all).
-    - COMMENT is used for everything in between.
-    """
-    has_errors = any(
-        i.get("severity") == "error" for i in review.get("issues", [])
-    )
+    has_errors = any(issue.get("severity") == "error" for issue in review.get("issues", []))
     raw = review.get("verdict", "comment").upper()
 
     if raw == "REQUEST_CHANGES" and not has_errors:
@@ -326,12 +289,10 @@ def resolve_verdict(review: dict) -> str:
     if raw not in ("APPROVE", "REQUEST_CHANGES", "COMMENT"):
         raw = "COMMENT"
 
+    if raw == "APPROVE":
+        raw = "COMMENT"
+
     return raw
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 
 
 def main() -> None:
@@ -341,18 +302,16 @@ def main() -> None:
     base_sha = os.environ["BASE_SHA"]
     head_sha = os.environ["HEAD_SHA"]
 
-    print(f"[review] PR #{pr_number} — {os.environ.get('PR_TITLE', '')}")
+    print(f"[review] {PROJECT_NAME} PR #{pr_number}: {os.environ.get('PR_TITLE', '')}")
 
-    # ── 1. Get the diff ──────────────────────────────────────────────────────
     diff = get_diff(base_sha, head_sha)
     if not diff.strip():
-        print("[review] No relevant files changed — skipping.")
+        print("[review] No relevant files changed; skipping.")
         sys.exit(0)
     print(f"[review] Diff size: {len(diff):,} chars")
 
-    # ── 2. Fetch PR context from GitHub ─────────────────────────────────────
-    g = Github(auth=Auth.Token(token))
-    repo = g.get_repo(repo_name)
+    github = Github(auth=Auth.Token(token))
+    repo = github.get_repo(repo_name)
     pr = repo.get_pull(pr_number)
 
     review_comments = get_previous_review_comments(pr)
@@ -362,11 +321,14 @@ def main() -> None:
         f"{len(issue_comments)} issue comment(s)"
     )
 
-    # ── 3. Call Gemini ───────────────────────────────────────────────────────
     prompt = build_user_prompt(
-        diff, pr.title, pr.body or "", review_comments, issue_comments
+        diff=diff,
+        pr_title=pr.title,
+        pr_body=pr.body or "",
+        review_comments=review_comments,
+        issue_comments=issue_comments,
     )
-    print(f"[review] Sending prompt ({len(prompt):,} chars) to {GEMINI_MODEL}…")
+    print(f"[review] Sending prompt ({len(prompt):,} chars) to {GEMINI_MODEL}")
     review = call_gemini(prompt)
     print(
         f"[review] Received verdict='{review.get('verdict')}', "
@@ -374,27 +336,23 @@ def main() -> None:
         f"{len(review.get('open_questions', []))} question(s)"
     )
 
-    # ── 4. Resolve verdict and post the GitHub PR review ────────────────────
     final_verdict = resolve_verdict(review)
     body = format_review_body(review)
 
-    # Dismiss previous bot REQUEST_CHANGES reviews before posting the new one
-    # so the PR is not left in a blocked state when errors are gone.
     dismiss_stale_bot_reviews(pr, final_verdict)
 
     pr.create_review(body=body, event=final_verdict)
     print(f"[review] Review posted (event={final_verdict})")
 
-    # ── 5. Post open questions as a separate comment so they are highly visible
     questions = review.get("open_questions", [])
     if questions:
-        q_body = "### ❓ Questions for the author\n\n"
-        q_body += "\n".join(f"- [ ] {q}" for q in questions)
-        q_body += (
+        question_body = "### Questions for the author\n\n"
+        question_body += "\n".join(f"- [ ] {question}" for question in questions)
+        question_body += (
             "\n\n*Please address these questions in the PR description or "
             "as reply comments before requesting re-review.*"
         )
-        pr.create_issue_comment(q_body)
+        pr.create_issue_comment(question_body)
         print(f"[review] Posted {len(questions)} open question(s) as issue comment")
 
 
