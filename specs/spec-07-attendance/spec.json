@@ -1,0 +1,194 @@
+{
+  "feature_name": "SPEC-07 Assistència",
+  "feature_slug": "spec-07-attendance",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala.feature.attendance",
+  "scaffold": "MainScaffold",
+  "summary": "Full **Assistència** per event (Fase 3): `GET /api/v1/events/{id}/attendance` (own row for `member`, full roster for `staff`+), `PUT /api/v1/events/{id}/attendance/me` (`yes`/`no`/`maybe` while `attendanceOpen && before start`), `PUT /api/v1/events/{id}/attendance/{userId}` (`technical`/`board`/`admin` roll-call `attended`/`absent`), live `Event.attendanceSummary` sync, and integrated UI inside `EventDetailScreen`. **Server + web (wasmJs)**.",
+  "overview": "Fase 3 slice enabling members to RSVP to open rehearsals/performances and enabling technical/board staff to take attendance after the event.\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §4.4, §5.12, §6.7 (asistencia), §7.4 (Calendari detail integration) · `docs/decisiones.md`.\n\n**Prerequisites**\n- `platform-schema-v02` (`attendance` with `UNIQUE(event_id, user_id)` and `comment` ≤ 200 chars).\n- `platform-core-contract` (`Attendance`, `AttendanceStatus`, `AttendanceSummary`).\n- `platform-server-auth`, `spec-03-calendar` (`EventDetailScreen` attendance slot + `Event.attendanceSummary`), `spec-05-members`, `platform-openapi-deploy`.\n\n**Key business & visibility rules (§5.12 & §6.7)**\n- **Self RSVP (`PUT /api/v1/events/{id}/attendance/me`):** allowed for any authenticated role (`member`+) with body `{status, comment?}`:\n  - `status` MUST be one of `yes`, `no`, `maybe` (`422 validation_failed` if `attended`/`absent`).\n  - Requires `event.attendanceOpen == true` (`422 validation_failed` otherwise).\n  - Requires event has **not started yet**: for timed events `now < event.date`; for `allDay` events `now < startOfNextDay(event.date in Europe/Madrid)` (members can still RSVP on the day of an all-day event until end of day, or before `event.date` if timed — exact check documented in `AttendanceService`).\n  - Server sets `answeredAt = Clock.System.now()` (read-only) and upserts `(eventId, currentUserId)`.\n- **Staff attendance roll-call (`PUT /api/v1/events/{id}/attendance/{userId}`):** allowed for **`technical`, `board`, `admin`** (`403` for `member`) with body `{status, comment?}`:\n  - Validates `userId` exists and is not `deleted` (`404`/`422`).\n  - Allows setting `attended` or `absent` (and correcting RSVP `yes`/`no`/`maybe` if needed by staff, e.g. member confirmed via WhatsApp).\n  - Upserts `(eventId, userId)` preserving original `answeredAt` if already set or stamping `now()`.\n- **Listing (`GET /api/v1/events/{id}/attendance`):**\n  - `member`: returns a list containing **only their own** `Attendance` row (0 or 1 item, including their own `comment`) so members never see other members' comments (`comment` visibility is `staff` per §5.12).\n  - `technical`, `board`, `admin`: returns all `Attendance` rows for the event with basic member summary (`userId`, `name`, `lastNames`, `nickname`, `avatar`) + `comment`.\n  - Public API: **none** (attendance is strictly private).\n- **Live `Event.attendanceSummary`:** every RSVP or staff update is immediately reflected in `Event.attendanceSummary` (`{yes, no, maybe, attended, absent}`) queried by `spec-03-calendar`.\n\n**Acceptance (slice)**\n- `./gradlew :server:test :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes.\n- Permission matrix verifies: `anonymous` (401), `member` (sees only own row on `GET`, can `PUT /me` with `yes`/`no`/`maybe`, gets `403` on `PUT /{userId}`), `technical`/`board`/`admin` (full list + `PUT /{userId}` with `attended`/`absent`).\n- `PUT /me` rejects `attended`/`absent`, closed `attendanceOpen=false`, and already-started events with `422`.\n- `EventDetailScreen` displays RSVP toggle buttons (`Hi vaig` / `No hi vaig` / `Potser` + optional comment) for all members when `attendanceOpen`, plus a staff roll-call list (`Hi va anar` / `No hi va anar`) when `attendance:write` is present.\n- `OpenApiRouteSyncTest` passes.",
+  "client_scope": {
+    "preset": "server_web",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": true,
+    "ios": false,
+    "external_public_api": false
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "webApp": ":app:webApp",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "Attendance UI integrates as a section inside `EventDetailScreen` in `:app:shared` `commonMain`. `:app:webApp` hosts wasm only. Android/desktop/JS out of v1 scope.",
+  "out_of_scope": "- Global attendance statistics/dashboards across seasons (future phase).\n- Push/email/WhatsApp reminders.\n- Public attendance endpoints.\n- Android, desktop, JS, iOS clients.",
+  "external_systems": [],
+  "auth": {
+    "client": "Bearer JWT via `SessionManager`. All authenticated users see their RSVP widget; staff roll-call panel shown when `attendance:write` is present.",
+    "server": "`member`: own row on `GET`, `PUT /me` (`yes`/`no`/`maybe`). `technical`/`board`/`admin`: full list on `GET`, `PUT /me`, and `PUT /{userId}`."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §4.4, §5.12, §6.7",
+    "docs/decisiones.md",
+    "specs/spec-03-calendar"
+  ],
+  "images": [],
+  "components": [
+    {
+      "name": "Attendance.sq",
+      "location": "server/src/main/sqldelight/com/bitdesal/tabala/db/Attendance.sq",
+      "decision": "create",
+      "usage": "SQLDelight queries: upsert by `(event_id, user_id)`, fetch single user's row for an event, fetch full roster joined with `users` + `stored_files`, and aggregate counts by `status`.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "AttendanceService",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/attendance/AttendanceService.kt",
+      "decision": "create",
+      "usage": "Enforces `attendanceOpen` + start-time window (with injectable `Clock` for deterministic tests), `yes`/`no`/`maybe` restriction for `/me`, `comment` max 200 chars, staff upsert for any non-deleted user, and audience filtering on `GET`.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "AttendanceRoutes",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/routes/AttendanceRoutes.kt",
+      "decision": "create",
+      "usage": "Registers `GET /api/v1/events/{id}/attendance`, `PUT /api/v1/events/{id}/attendance/me`, and `PUT /api/v1/events/{id}/attendance/{userId}`.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "MuixerangaApi (attendance extension)",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/api/client/AttendanceApi.kt",
+      "decision": "create",
+      "usage": "Client methods `getEventAttendance(eventId)`, `putMyAttendance(eventId, request)`, `putUserAttendance(eventId, userId, request)`.",
+      "notes": "",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "AttendanceRepository + AttendanceViewModel",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/attendance/",
+      "decision": "create",
+      "usage": "Manages current user's RSVP state, optional comment, staff roster list + quick `attended`/`absent` toggles, and notifies `CalendarViewModel` to refresh `attendanceSummary`.",
+      "notes": "",
+      "layer": "viewmodel",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "EventAttendanceSection",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/attendance/EventAttendanceSection.kt",
+      "decision": "create",
+      "usage": "Embedded in `EventDetailScreen`: summary chips (`Hi vaig`, `Potser`, `No hi vaig`, `Hi va anar`, `No hi va anar`), member RSVP segmented buttons + comment field (disabled with explanation when closed/started), and staff roll-call list with quick `Hi va anar` / `No hi va anar` actions.",
+      "notes": "",
+      "layer": "ui",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    }
+  ],
+  "structure": "Vertical slice flow:\n\n```text\nWeb /calendari/{id} (EventDetailScreen → EventAttendanceSection → AttendanceViewModel → AttendanceRepository → MuixerangaApi)\n  ↕ JSON (Bearer)\nServer AttendanceRoutes → AttendanceService → Attendance.sq (SQLite v0.2)\n```",
+  "sections": [
+    {
+      "title": "RSVP time window & validation rules",
+      "description": "For `PUT /events/{id}/attendance/me`: verify event exists (`404`), `event.attendanceOpen == true`, `status ∈ {yes, no, maybe}`, `comment.length <= 200`, and current instant is before cutoff (`event.date` for timed events; `startOfNextDay(event.date in Europe/Madrid)` for `allDay` events).",
+      "behavior": "Return `422 validation_failed` with clear Valencian message when closed, past start, or invalid status. Inject `Clock` into `AttendanceService` so tests verify before/after cutoff deterministically."
+    },
+    {
+      "title": "Visibility of `comment` and roster",
+      "description": "`member` calling `GET /events/{id}/attendance` receives only their own record (if any), never other members' rows or comments.",
+      "behavior": "`technical`, `board`, and `admin` receive the full list of respondents plus staff roll-call controls to mark `attended` / `absent` for any active colla member (even if the member did not RSVP beforehand)."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "Get event attendance",
+      "method": "GET",
+      "path": "/api/v1/events/{id}/attendance",
+      "notes": "`member`: own row only (0..1 items). `technical`/`board`/`admin`: full list with member summaries and `comment`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Upsert my attendance (RSVP)",
+      "method": "PUT",
+      "path": "/api/v1/events/{id}/attendance/me",
+      "notes": "Any authenticated user. `{status: yes|no|maybe, comment?}` while `attendanceOpen && before start`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Upsert member attendance (staff roll-call)",
+      "method": "PUT",
+      "path": "/api/v1/events/{id}/attendance/{userId}",
+      "notes": "`technical`/`board`/`admin`. `{status, comment?}` (primarily `attended` / `absent`).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    }
+  ],
+  "persistence": "Uses SQLite v0.2 `attendance`, `events`, and `users` via `Attendance.sq`. Records are preserved on user soft-delete and anonymization (`decisiones.md`). No new migrations.",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Attendance.sq + AttendanceService",
+      "spec": "Implement SQLDelight upsert/list queries and `AttendanceService` with injectable `Clock`, `attendanceOpen` + start-time cutoff rules, `yes`/`no`/`maybe` enforcement on `/me`, `comment` max 200 validation, and audience filtering.",
+      "acceptance_criteria": [
+        "`PUT /me` returns `422` when `attendanceOpen=false`, after event start, or when passing `attended`/`absent`",
+        "`GET` returns only own row for `member` and full roster for `technical`/`board`/`admin`"
+      ],
+      "dependencies": [],
+      "components": ["Attendance.sq", "AttendanceService"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T2",
+      "title": "AttendanceRoutes + OpenAPI + permission tests",
+      "spec": "Register all 3 attendance routes, update `openapi.yaml`, and add `:server:test` suite verifying all roles (`anonymous`, `member`, `technical`, `board`, `admin`), `Event.attendanceSummary` counts, and `allDay` vs timed cutoffs.",
+      "acceptance_criteria": [
+        "`./gradlew :server:test` passes including `OpenApiRouteSyncTest`"
+      ],
+      "dependencies": ["T1"],
+      "components": ["AttendanceRoutes"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T3",
+      "title": "MuixerangaApi attendance + Repository + ViewModel + EventDetailScreen UI",
+      "spec": "Add client methods in `:core`, create `AttendanceRepository` + `AttendanceViewModel`, and integrate `EventAttendanceSection` into `EventDetailScreen` (member RSVP bar + staff roll-call list).",
+      "acceptance_criteria": [
+        "`./gradlew :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes",
+        "`jvmTest` verifies RSVP state updates and staff roll-call visibility gated by `attendance:write`"
+      ],
+      "dependencies": ["T2"],
+      "components": ["MuixerangaApi (attendance extension)", "AttendanceRepository + AttendanceViewModel", "EventAttendanceSection"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    }
+  ]
+}

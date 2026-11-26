@@ -1,0 +1,225 @@
+{
+  "feature_name": "SPEC-08 Documents",
+  "feature_slug": "spec-08-documents",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala.feature.documents",
+  "scaffold": "MainScaffold",
+  "summary": "Full **Documents** archive (`board` & `admin` only, Fase 3): CRUD `/api/v1/documents` with multipart upload using **flat form fields + `file`** (max 50 MB, PDF/images/Office), always-protected download (`Content-Disposition: attachment`) via Ktor Bearer → `Blob`, filters (`kind`, `eventId`, `userId`, `year`, `q`), and web filterable list + upload UI. **Server + web (wasmJs)**.",
+  "overview": "Fase 3 protected document repository for board minutes, invoices, contracts, grants, statutes, insurance policies, and signed RGPD consent forms.\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §4.4, §5.11, §6.7 (documentos), §6.9 (ficheros protegidos), §7.4 (Documents) · `docs/decisiones.md`.\n\n**Prerequisites**\n- `platform-schema-v02` (`documents`, `stored_files`).\n- `platform-core-contract` (`Document`, `DocumentKind`, `DocumentPatch`, `FileRef`).\n- `platform-server-auth`, `platform-files` (`FileStorageService.storeDocument`, 50 MB PDF/image/Office magic-byte validation, protected download with `Content-Disposition: attachment`), `platform-me-rgpd` (`BrowserFileDownload`), `platform-web-shell` (`SessionManager.fetchAuthorizedBytes`), `platform-openapi-deploy`.\n\n**Key business & security rules (`decisiones.md` & §5.11)**\n- **Strictly `board` and `admin` only** (`anonymous` → 401; `member` and `technical` → 403 on all `/api/v1/documents*` endpoints and on protected document file downloads). Never exposed on `/public/*`. (Note: a member can see metadata of their own `userId = me` documents inside `GET /api/v1/me/export` per `decisiones.md`.)\n- **Multipart upload contract (`POST /api/v1/documents`, `decisiones.md`):** uses `multipart/form-data` with **individual form fields** (simplest for Ktor Client across Web and future Android clients, plus `curl -F`): `title` (required, max 200), `kind` (required, `DocumentKind` snake_case), `date` (optional `YYYY-MM-DD`), `eventId` (optional), `userId` (optional), `notes` (optional) + `file` (required binary part, max 50 MB, allowed MIME by magic bytes: PDF, JPEG, PNG, WebP, DOCX, XLSX, ODT, ODS). Subject to the `upload` rate limit (30/min/user).\n- **Update (`PATCH /api/v1/documents/{id}`):** RFC 7386 JSON Merge Patch with required `version` updating metadata (`title`, `kind`, `date`, `eventId`, `userId`, `notes`). File replacement is done by uploading a new document or deleting/re-uploading (immutable file per document record keeps audit clarity).\n- **Deletion (`DELETE /api/v1/documents/{id}`):** removes the `documents` row and deletes the corresponding `stored_files` row + disk file in `FILES_DIR` post-commit (`204`).\n- **Authenticated browser download (`decisiones.md`):** because `GET /api/v1/files/{id}/{filename}` requires `Authorization: Bearer` for protected documents (never cookies), clicking «Descarrega» in the webapp fetches bytes via `SessionManager.fetchAuthorizedBytes(doc.file.url)` and triggers a browser download via `BrowserFileDownload.downloadBytes(...)`.\n- **Foreign key validation:** when `eventId` or `userId` is provided, verify the referenced row exists (`422 validation_failed` if missing). Documents are preserved when a user is soft-deleted or anonymized (`decisiones.md`).\n\n**Acceptance (slice)**\n- `./gradlew :server:test :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes.\n- Permission matrix verifies `anonymous` (401), `member` (403), `technical` (403), `board` & `admin` (full CRUD + protected download with `Content-Disposition: attachment`).\n- Multipart upload validates required form fields, rejects unsupported MIME (`415`) and > 50 MB (`413`), and links `eventId`/`userId` (reflected in `Event.documentIds` for `board`).\n- Deleting a document removes its file from `FILES_DIR`.\n- Web UI at `/documents` renders `KpiFilterStrip`, filters (`kind`, `year`, `eventId`/`userId`, search `q`), multipart upload modal, metadata edit dialog, delete confirmation, and Bearer-authenticated download button.\n- `OpenApiRouteSyncTest` passes.",
+  "client_scope": {
+    "preset": "server_web",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": true,
+    "ios": false,
+    "external_public_api": false
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "webApp": ":app:webApp",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "All documents UI, ViewModels, and repositories live in `:app:shared` `commonMain`. Uses `SessionManager.fetchAuthorizedBytes` + `BrowserFileDownload` in `wasmJsMain`. Android/desktop/JS out of v1 scope.",
+  "out_of_scope": "- Electronic signatures or OCR.\n- Public document sharing.\n- In-place binary file replacement on `PATCH`.\n- Android, desktop, JS, iOS clients.",
+  "external_systems": [],
+  "auth": {
+    "client": "Bearer JWT via `SessionManager`. Tab `/documents` visible only when `documents:read` is present.",
+    "server": "`board` and `admin` only (`403` for `member` and `technical`). Stored files always have `protected = 1`."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §4.4, §5.11, §6.7, §6.9, §7.4",
+    "docs/decisiones.md",
+    "specs/platform-files"
+  ],
+  "images": [],
+  "components": [
+    {
+      "name": "Documents.sq",
+      "location": "server/src/main/sqldelight/com/bitdesal/tabala/db/Documents.sq",
+      "decision": "create",
+      "usage": "SQLDelight queries for filtered/paginated documents (`kind`, `eventId`, `userId`, `year`, `q`, `sort`), join with `stored_files`, optimistic-locked metadata patch, and delete.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "DocumentService",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/documents/DocumentService.kt",
+      "decision": "create",
+      "usage": "Handles multipart create (via `FileStorageService.storeDocument` with `protected = true`), validates `eventId`/`userId` existence, metadata `PATCH` with `version`, and transactional `DELETE` cleaning up `stored_files` + disk blob post-commit.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "DocumentRoutes",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/routes/DocumentRoutes.kt",
+      "decision": "create",
+      "usage": "Mounts all 5 `/api/v1/documents*` endpoints guarded by `requireRole(BOARD, ADMIN)` (with `upload` rate limit on `POST`).",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "MuixerangaApi (documents extension)",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/api/client/DocumentsApi.kt",
+      "decision": "create",
+      "usage": "Client methods: `listDocuments`, `getDocument`, `uploadDocument` (`submitFormWithBinaryData` with flat form fields + `file`), `patchDocument`, `deleteDocument`.",
+      "notes": "",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "DocumentsRepository + DocumentsViewModel",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/documents/",
+      "decision": "create",
+      "usage": "Manages filterable list (`kind`, `year`, `eventId`, `userId`, `q`), multipart upload progress/validation, metadata edit, delete confirmation, and authenticated download via `SessionManager.fetchAuthorizedBytes` + `BrowserFileDownload`.",
+      "notes": "",
+      "layer": "viewmodel",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "DocumentsScreen + DocumentUploadDialog",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/documents/",
+      "decision": "create",
+      "usage": "Route `/documents`: `KpiFilterStrip`, filter bar (`kind`, `year`, search), document list/table with kind badge, date, linked event/member, size, «Descarrega», «Edita», «Elimina», and upload dialog using browser file picker (`wasmJsMain` `expect/actual` file picker helper).",
+      "notes": "",
+      "layer": "ui",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    }
+  ],
+  "structure": "Vertical slice flow:\n\n```text\nWeb /documents (DocumentsScreen → DocumentsViewModel → DocumentsRepository → MuixerangaApi)\n  ├─ Upload: multipart/form-data (title, kind, date?, eventId?, userId?, notes?, file) → POST /api/v1/documents\n  └─ Download: GET /api/v1/files/{id}/{name} (Authorization: Bearer) → ByteArray → BrowserFileDownload\nServer DocumentRoutes → DocumentService (+ FileStorageService) → Documents.sq (SQLite v0.2)\n```",
+  "sections": [
+    {
+      "title": "Multipart form fields (`POST /api/v1/documents`, `decisiones.md`)",
+      "description": "Accept flat `PartData.FormItem` fields (`title`, `kind`, optional `date`, optional `eventId`, optional `userId`, optional `notes`) alongside a single `PartData.FileItem` named `file`.",
+      "behavior": "Read form fields and stream `file` to temp storage via `FileStorageService.storeDocument` (50 MB cap, magic-byte check). If any field validation fails (`422`), clean up the temp file immediately before returning `ApiErrorResponse`."
+    },
+    {
+      "title": "Listing filters & sorting",
+      "description": "`GET /api/v1/documents` supports `page`, `perPage`, `kind`, `eventId`, `userId`, `year` (matches `date` year or `createdAt` year when `date` is null), `q` (search in `title`, `notes`), and `sort` (`date`, `title`, `createdAt`; default `-date`).",
+      "behavior": "Every returned `Document` embeds `file: FileRef` (pointing to `/api/v1/files/{id}/{safeName}` and optional `thumbUrl` when the document is an image)."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "List documents",
+      "method": "GET",
+      "path": "/api/v1/documents",
+      "notes": "`board`/`admin`. Paginated; filters `kind`, `eventId`, `userId`, `year`, `q`; default sort `-date`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Get document metadata",
+      "method": "GET",
+      "path": "/api/v1/documents/{id}",
+      "notes": "`board`/`admin`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Upload document",
+      "method": "POST",
+      "path": "/api/v1/documents",
+      "notes": "`board`/`admin`. `multipart/form-data` with flat fields (`title`, `kind`, `date?`, `eventId?`, `userId?`, `notes?`) + `file` (max 50 MB). `201` + `Location`. Upload rate limit.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Update document metadata",
+      "method": "PATCH",
+      "path": "/api/v1/documents/{id}",
+      "notes": "`board`/`admin`. RFC 7386 JSON Merge Patch with `version` (metadata only).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Delete document",
+      "method": "DELETE",
+      "path": "/api/v1/documents/{id}",
+      "notes": "`board`/`admin`. `204`; deletes DB row, `stored_files`, and disk file.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    }
+  ],
+  "persistence": "Uses SQLite v0.2 `documents`, `stored_files`, `events`, and `users` via `Documents.sq`. No new migrations.",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Documents.sq + DocumentService",
+      "spec": "Implement SQLDelight queries and `DocumentService`: flat-field multipart create via `FileStorageService.storeDocument`, FK validation for `eventId`/`userId`, metadata `PATCH` with `version`, and transactional `DELETE` cleaning up `FILES_DIR` post-commit.",
+      "acceptance_criteria": [
+        "Upload persists PDF/DOCX/XLSX/ODT/ODS/image with `protected = 1`",
+        "Invalid MIME returns `415`; > 50 MB returns `413`; missing `title`/`kind` returns `422` and leaves no orphan file",
+        "Deleting document removes file from `FILES_DIR`"
+      ],
+      "dependencies": [],
+      "components": ["Documents.sq", "DocumentService"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T2",
+      "title": "DocumentRoutes + OpenAPI + permission tests",
+      "spec": "Mount all 5 `/api/v1/documents*` routes guarded by `board`/`admin` + `upload` rate limit, update `openapi.yaml`, and add `:server:test` suite verifying `anonymous` (401), `member` (403), `technical` (403), `board`/`admin` (full CRUD + protected download with `Content-Disposition: attachment`).",
+      "acceptance_criteria": [
+        "`./gradlew :server:test` passes including `OpenApiRouteSyncTest`"
+      ],
+      "dependencies": ["T1"],
+      "components": ["DocumentRoutes"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T3",
+      "title": "MuixerangaApi documents + Repository + ViewModel",
+      "spec": "Add client methods in `:core` (`submitFormWithBinaryData` with flat form fields + `file`) and build `DocumentsRepository` + `DocumentsViewModel` in `:app:shared` (filters, upload, metadata edit, delete, Bearer-authenticated download via `fetchAuthorizedBytes` + `BrowserFileDownload`).",
+      "acceptance_criteria": [
+        "`jvmTest` verifies filter query state, upload validation, and authenticated download delegation"
+      ],
+      "dependencies": ["T2"],
+      "components": ["MuixerangaApi (documents extension)", "DocumentsRepository + DocumentsViewModel"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T4",
+      "title": "DocumentsScreen + DocumentUploadDialog + navigation",
+      "spec": "Wire `/documents` in `AppNavigation`: `KpiFilterStrip`, filterable list (`kind`, `year`, search), upload dialog with file picker (`expect/actual` in `wasmJsMain`), metadata edit dialog, and «Descarrega» button.",
+      "acceptance_criteria": [
+        "`./gradlew :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes"
+      ],
+      "dependencies": ["T3"],
+      "components": ["DocumentsScreen + DocumentUploadDialog"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    }
+  ]
+}

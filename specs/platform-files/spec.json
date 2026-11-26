@@ -1,0 +1,226 @@
+{
+  "feature_name": "Platform file storage & media pipeline (§6.9)",
+  "feature_slug": "platform-files",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala",
+  "scaffold": "",
+  "summary": "Reusable `:server` file storage & image pipeline (§6.9): multipart upload validation by *magic bytes*, memory-safe image resize (≤2000 px) + 400 px thumbnail generation under `-Xmx256m`, `stored_files` metadata + disk cleanup, `GET /api/v1/files/{id}/{filename}` and `GET /api/v1/files/{id}/thumb/{filename}` with owner-based RGPD visibility, plus `PUT/DELETE /api/v1/me/avatar`. **Server only** (consumed by feature slices + Ktor Bearer download in web).",
+  "overview": "Cross-cutting server media slice required by Calendar (event image + gallery), Members (avatars), Inventory (item image), Groups/Achievements (logos/images), Figures (figure image), and Documents (protected 50 MB files).\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §6.9, §6.7 (`/me/avatar`), §8 (NFR-01 `-Xmx256m`) · `docs/decisiones.md`.\n\n**Prerequisites**\n- `platform-server-infra` (`FILES_DIR`, `PUBLIC_BASE_URL`, `DatabaseAccess`, `ErrorHandling`).\n- `platform-schema-v02` (`stored_files` table and `*_file_id` columns).\n- `platform-core-contract` (`FileRef` DTO).\n- `platform-server-auth` (optional/required Bearer auth for conditional file download and `/me/avatar`).\n\n**Key design rules (`decisiones.md` & §6.9)**\n- **Magic-byte sniffing (no extension trust):** inspect file headers to allow strictly:\n  - Images (`max 10 MB`; avatars `max 5 MB`): `image/jpeg`, `image/png`, `image/webp`.\n  - Documents (`max 50 MB`): `application/pdf`, `image/jpeg`, `image/png`, `image/webp`, and Office OOXML/ODF (`docx`, `xlsx`, `odt`, `ods` — verified as ZIP magic bytes + expected internal entry such as `word/document.xml`, `xl/workbook.xml`, `mimetype` = ODF).\n  - Any unsupported MIME → `415 unsupported_media_type`; size exceeded → `413 file_too_large`.\n- **Memory-safe image processing (`-Xmx256m`):** read image header dimensions *before* decoding pixels (via `ImageReader.getWidth/getHeight`); if `width * height > 64_000_000` (64 MP) reject with `413 file_too_large` without allocating the bitmap. Run decoding/resizing on `Dispatchers.IO` bounded by a `Semaphore(permits = 2)` so concurrent uploads never OOM. Resize longest edge to ≤2000 px and produce a ≤400 px thumbnail stored under `thumb_storage_key`.\n- **WebP support:** include TwelveMonkeys `imageio-webp` (or equivalent lightweight JVM ImageIO plugin) so WebP reads work reliably on JVM 21; re-encode processed images to JPEG/PNG/WebP cleanly.\n- **Disk safety & cleanup:** stream uploads to a temp file under `FILES_DIR/.tmp` while enforcing byte caps, generate random UUID storage keys (never original filename on disk), move atomically to `FILES_DIR/<key>`, and delete temp/old files on error, replacement, or entity deletion.\n- **Thumbnails (`decisiones.md`):** expose `GET /api/v1/files/{id}/thumb/{filename}` (referenced in `FileRef.thumbUrl`) applying the exact same access check as `GET /api/v1/files/{id}/{filename}`.\n- **Owner-based visibility matrix:** file visibility is derived dynamically from the owning entity's current state (e.g., an event image becomes public only while `event.published == true`; a user avatar becomes public only while `user.status == active && consent.publicProfile == true && !isMinor`; `Document.file` is always protected for `board`/`admin` with `Content-Disposition: attachment`).\n\n**Acceptance (slice)**\n- `./gradlew :server:test` passes.\n- Fake `.jpg` containing plain text or script returns `415 unsupported_media_type`.\n- Image header > 64 MP returns `413 file_too_large` without allocating full raster.\n- Uploading an image > 2000 px resizes main file to ≤ 2000 px and creates a ≤ 400 px thumbnail reachable via `FileRef.thumbUrl`.\n- Replacing or deleting `/me/avatar` removes the previous main + thumbnail files from `FILES_DIR`.\n- Protected files require valid Bearer with owner permissions (`404` when unauthorized/forbidden); public files succeed anonymously with long `Cache-Control`.\n- Document downloads send `Content-Disposition: attachment` (sanitized filename) and `X-Content-Type-Options: nosniff`.",
+  "client_scope": {
+    "preset": "server_only",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": false,
+    "ios": false,
+    "external_public_api": true
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "webApp": ":app:webApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "No UI in this slice. Webapp consumes protected files via `SessionManager.fetchAuthorizedBytes()` (Ktor Client with `Authorization: Bearer`) and renders upload pickers inside each feature slice.",
+  "out_of_scope": "- Entity-specific upload routes other than `/me/avatar` (each feature slice wires its own routes calling `FileStorageService`: calendar image/gallery, members avatar, inventory image, group/achievement logo/image, figure image, documents multipart).\n- External CDN or object storage (local `FILES_DIR` on VPS per §2).\n- UI file pickers (owned by feature slices).\n- Android, desktop, JS, iOS clients.",
+  "external_systems": [],
+  "auth": {
+    "client": "N/A in this slice (webapp sends `Authorization: Bearer` via Ktor Client for protected downloads).",
+    "server": "`GET /api/v1/files/{id}/{filename}` and `GET /api/v1/files/{id}/thumb/{filename}` use optional Bearer authentication and delegate authorization to `FileAccessPolicy` (`404 not_found` when private and caller lacks permission). `PUT/DELETE /api/v1/me/avatar` require Bearer."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §6.7 (/me/avatar)",
+    "docs/especificacion-tecnica.md §6.9 (Ficheros)",
+    "docs/especificacion-tecnica.md §8 (NFR-01)",
+    "docs/decisiones.md",
+    "specs/platform-schema-v02"
+  ],
+  "images": [],
+  "components": [
+    {
+      "name": "MagicByteSniffer",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/files/MagicByteSniffer.kt",
+      "decision": "create",
+      "usage": "Detect actual MIME type from file header bytes (JPEG, PNG, WebP, PDF) and safe ZIP inspection for DOCX/XLSX/ODT/ODS without trusting filename or `Content-Type` header.",
+      "notes": "No heavy Apache Tika dependency (keep `-Xmx256m` and small fat JAR).",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "ImagePipeline",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/files/ImagePipeline.kt",
+      "decision": "create",
+      "usage": "Check dimensions before decode (reject > 64 MP with `413 file_too_large`), guard concurrency with `Semaphore(2)` on `Dispatchers.IO`, resize to max 2000 px, and generate 400 px thumbnail.",
+      "notes": "Registers WebP `ImageIO` support (TwelveMonkeys `imageio-webp`).",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "FileStorageService",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/files/FileStorageService.kt",
+      "decision": "create",
+      "usage": "Reusable service for all feature slices: `storeImage(ownerType, ownerId, field, maxBytes, part)`, `storeDocument(ownerId, part)`, `deleteStoredFile(fileId)`, `toFileRef(storedFile)` building `url` + optional `thumbUrl` from `PUBLIC_BASE_URL`.",
+      "notes": "Cleans temp files on failure and deletes disk blobs only after DB transaction commits (post-commit hook).",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "FileAccessPolicy",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/files/FileAccessPolicy.kt",
+      "decision": "create",
+      "usage": "Evaluates whether a `stored_files` row is publicly readable or permitted for a given `AuthPrincipal` based on `owner_type`, `owner_id`, `field`, and live entity state in SQLite.",
+      "notes": "Returns `Public`, `PrivateAllowed(attachment: Boolean)`, or `Denied` (mapped to `404`).",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "Files.sq",
+      "location": "server/src/main/sqldelight/com/bitdesal/tabala/db/Files.sq",
+      "decision": "create",
+      "usage": "SQLDelight queries for inserting, fetching, and deleting `stored_files`, plus lightweight visibility lookups by `owner_type`/`owner_id`.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "FileRoutes",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/routes/FileRoutes.kt",
+      "decision": "create",
+      "usage": "`GET /api/v1/files/{id}/{filename}`, `GET /api/v1/files/{id}/thumb/{filename}`, plus `PUT /api/v1/me/avatar` and `DELETE /api/v1/me/avatar`.",
+      "notes": "Enforces `X-Content-Type-Options: nosniff`, sanitized `Content-Disposition` (attachment for documents), `Cache-Control: public, max-age=31536000, immutable` for public files (random IDs) and `private, no-store` for protected files.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    }
+  ],
+  "structure": "Upload & download architecture:\n\n```text\nMultipart upload (PUT /me/avatar or feature upload route)\n  → Stream part to FILES_DIR/.tmp/<uuid> enforcing maxBytes (5 MB / 10 MB / 50 MB)\n  → MagicByteSniffer validates real MIME (415 if unsupported)\n  → If image: ImagePipeline checks header dimensions ≤ 64 MP (413), Semaphore(2), resize ≤2000 px + thumb ≤400 px\n  → Atomic move to FILES_DIR/<storageKey> (+ <thumbStorageKey>)\n  → DB writeTransaction: insert stored_files + update owner *_file_id + bump version\n  → Post-commit: delete previous stored_files row & old disk files\n  → Return FileRef(id, url, thumbUrl, contentType, size)\n\nDownload (GET /api/v1/files/{id}/{filename} or /thumb/{filename})\n  → Load stored_files by id (404 if missing)\n  → FileAccessPolicy checks owner entity state + optional Bearer principal (404 if denied)\n  → Stream file from FILES_DIR with nosniff + Cache-Control + Content-Disposition\n```",
+  "sections": [
+    {
+      "title": "Owner visibility matrix (`FileAccessPolicy`)",
+      "description": "Visibility is evaluated against the current DB state of the owning record (never solely a static flag, so unpublishing an event or revoking `publicProfile` immediately hides its files):",
+      "behavior": "- `user.avatar`: **public** iff `user.status == 'active' && consent_public_profile == 1 && !isMinor`; otherwise **private** to self, `staff`, `board`, `admin` (plus any authenticated `member` if the user holds an active `org_role` shown in internal `/org-chart`).\n- `event.image` / `event.gallery`: **public** iff `event.published == 1`; otherwise any authenticated `member`+.\n- `group.logo` / `group.image` / `achievement.logo`: **public**.\n- `figure.image`: **public** iff `figure.status != 'retired'`; otherwise any authenticated `member`+.\n- `inventory_item.image`: **private** (`board`, `admin` only).\n- `document.file`: **always protected** (`board`, `admin` only), served with `Content-Disposition: attachment; filename=\"<sanitized>\"`."
+    },
+    {
+      "title": "Thumbnail route (`FileRef.thumbUrl`)",
+      "description": "Every processed image stores both `storage_key` (≤2000 px) and `thumb_storage_key` (≤400 px). `FileRef.url` points to `{PUBLIC_BASE_URL}/api/v1/files/{id}/{safeName}` and `FileRef.thumbUrl` points to `{PUBLIC_BASE_URL}/api/v1/files/{id}/thumb/{safeName}`.",
+      "behavior": "For non-image documents (`PDF`, `DOCX`, `XLSX`, `ODT`, `ODS`), `thumb_storage_key` and `FileRef.thumbUrl` are `null`; requesting `/thumb/` on a non-image returns `404`."
+    },
+    {
+      "title": "Multipart limits & Netty event-loop safety",
+      "description": "Upload routes bypass the 1 MB JSON body limit from `platform-server-infra` and enforce per-endpoint caps (5 MB avatar, 10 MB images, 50 MB documents; Caddy allows up to 60 MB).",
+      "behavior": "All disk I/O, ZIP entry inspection, and ImageIO resizing run strictly on `Dispatchers.IO`. On upload failure or DB rollback, delete newly written files in a `finally` block so `FILES_DIR` never leaks orphan blobs."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "Download file",
+      "method": "GET",
+      "path": "/api/v1/files/{id}/{filename}",
+      "notes": "Public or Bearer depending on `FileAccessPolicy`; `404` if unauthorized/forbidden. `Content-Disposition: attachment` for documents.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "conditional"
+    },
+    {
+      "name": "Download image thumbnail",
+      "method": "GET",
+      "path": "/api/v1/files/{id}/thumb/{filename}",
+      "notes": "400 px thumbnail for images with identical `FileAccessPolicy` checks; `404` for non-images.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "conditional"
+    },
+    {
+      "name": "Upload own avatar",
+      "method": "PUT",
+      "path": "/api/v1/me/avatar",
+      "notes": "Multipart field `file` (JPEG/PNG/WebP, max 5 MB). Returns updated `FileRef` (or `UserSelf`).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Delete own avatar",
+      "method": "DELETE",
+      "path": "/api/v1/me/avatar",
+      "notes": "Clears `users.avatar_file_id` and removes disk blobs (`204`).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    }
+  ],
+  "persistence": "Uses `stored_files` from SQLite v0.2 (`Files.sq`) + local directory `FILES_DIR` (random storage keys, temp staging under `FILES_DIR/.tmp`).",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Add WebP ImageIO dependency & MagicByteSniffer",
+      "spec": "Add lightweight WebP ImageIO dependency (e.g. TwelveMonkeys `imageio-webp`) to `gradle/libs.versions.toml` and `server/build.gradle.kts`. Implement `MagicByteSniffer` detecting JPEG, PNG, WebP, PDF, and OOXML/ODF (`docx`, `xlsx`, `odt`, `ods`) by content bytes.",
+      "acceptance_criteria": [
+        "Unit tests accept real JPEG/PNG/WebP/PDF/DOCX/XLSX/ODT/ODS headers and reject disguised text/HTML/EXE files with `415 unsupported_media_type`"
+      ],
+      "dependencies": [],
+      "components": ["MagicByteSniffer"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T2",
+      "title": "ImagePipeline (64 MP guard, 2000 px resize, 400 px thumb)",
+      "spec": "Implement `ImagePipeline` on `Dispatchers.IO` with `Semaphore(2)`: inspect dimensions via `ImageReader` before decoding (> 64 MP → `413 file_too_large`), scale down if longest side > 2000 px, and generate a ≤ 400 px thumbnail.",
+      "acceptance_criteria": [
+        "Test verifies a crafted header claiming > 64 MP returns `413 file_too_large` without OOM",
+        "Test verifies a 3000×1500 image produces a 2000×1000 main file and 400×200 thumbnail"
+      ],
+      "dependencies": ["T1"],
+      "components": ["ImagePipeline"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T3",
+      "title": "Files.sq + FileStorageService",
+      "spec": "Add `Files.sq` and `FileStorageService` with streaming size-capped temp upload, random disk keys, post-commit cleanup of replaced/deleted files, rollback cleanup of temp files, and `FileRef` builder (`url` + `thumbUrl`). Wire in Koin `ServerModules`.",
+      "acceptance_criteria": [
+        "Replacing a file removes previous main + thumb blobs from `FILES_DIR`",
+        "Oversized upload aborts early with `413 file_too_large` and leaves zero temp files"
+      ],
+      "dependencies": ["T2"],
+      "components": ["Files.sq", "FileStorageService"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T4",
+      "title": "FileAccessPolicy + FileRoutes + /me/avatar + OpenAPI",
+      "spec": "Implement `FileAccessPolicy` (full owner visibility matrix), `GET /api/v1/files/{id}/{filename}`, `GET /api/v1/files/{id}/thumb/{filename}`, `PUT /api/v1/me/avatar`, and `DELETE /api/v1/me/avatar`. Set `nosniff`, `Cache-Control`, and sanitized `Content-Disposition: attachment` for documents. Update `openapi.yaml` and `MuixerangaApi` (`uploadMyAvatar`, `deleteMyAvatar`).",
+      "acceptance_criteria": [
+        "`:server:test` verifies public vs private visibility transitions (e.g. unpublishing event hides its image → `404`)",
+        "`:server:test` verifies minor's avatar is never accessible anonymously",
+        "`:server:test` verifies document download requires `board`/`admin` and sends `Content-Disposition: attachment`",
+        "`OpenApiRouteSyncTest` passes"
+      ],
+      "dependencies": ["T3"],
+      "components": ["FileAccessPolicy", "FileRoutes"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server", "web"]
+    }
+  ]
+}

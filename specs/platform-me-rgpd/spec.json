@@ -1,0 +1,307 @@
+{
+  "feature_name": "Platform me + RGPD (export, consent, profile)",
+  "feature_slug": "platform-me-rgpd",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala.feature.profile",
+  "scaffold": "MainScaffold",
+  "summary": "Complete **self-service RGPD** flow: server `GET /me/export` (incl. own documents metadata, notes, guardians if minor), hardened `PATCH /me` consent rules, setup gate after login; webapp screens setup inicial, perfil y descàrrega «Les meues dades». **Server + web (wasmJs)**.",
+  "overview": "Completes what `platform-server-auth` leaves open (RGPD export, consent hardening, full self-profile editing) and connects it to the web management shell.\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §5.4, §6.7 (`/me/export`), §7.3 · `docs/decisiones.md` (RGPD).\n\n**Prerequisites**\n- `platform-server-infra`, `platform-schema-v02`, `platform-core-contract`\n- `platform-server-auth`: Bearer session, `GET/PATCH /me`, `ConsentRequiredPlugin` (allowlist already includes `/me/export`)\n- `platform-web-shell`: GIS login, `SessionManager`, `AuthViewModel`, `AppNavigation`\n\n**Behaviour summary (`decisiones.md`)**\n1. After login, if `consent.dataProcessing == false`, webapp navigates to **setup** (`/configuracio-inicial`) until the user (or tutor text in `signedBy` for minors) accepts privacy policy via `PATCH /me`.\n2. Any API call returning `403 consent_required` redirects the webapp to `/configuracio-inicial`.\n3. `GET /me` and `GET /me/export` return self-visible data including `emergencyContact`, `isMinor`, `notes`, and (when minor) `guardians`. `GET /me/export` additionally bundles `orgRoles`, `positions`, own `attendance`, active `sessions` (no hashes), and metadata of `documents` linked to `userId = me` (e.g., signed consent PDFs).\n4. Profile screen edits only §5.4 self fields (using `PatchField<T>` + `version`) and provides a download button saving `muixeranga-dades-YYYY-MM-DD.json` via browser `Blob` download.\n\n**Acceptance (slice)**\n- `./gradlew :server:test :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` green.\n- Integration: `GET /api/v1/me/export` → `200 application/json` containing `user` (with `notes`, `emergencyContact`, `isMinor`, `guardians` if minor), `orgRoles`, `positions`, `attendance`, `documents` (own `userId` only), `sessions`; never `googleSub` or refresh hashes; accessible even before `dataProcessing=true`.\n- `PATCH /me` enforces monotonic `dataProcessing` (`false -> true` only; `true -> false` returns `422 validation_failed`), server fills `signedAt = now()` if omitted when enabling `dataProcessing` or changing consents, and requires non-blank `signedBy` when enabling `dataProcessing`.\n- Web: login without consent → forced setup → after accept `AuthViewModel` refreshes `Me` and enters app; menu «Les meues dades» downloads JSON file.",
+  "client_scope": {
+    "preset": "server_web",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": true,
+    "ios": false,
+    "external_public_api": false
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "webApp": ":app:webApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "All screens, ViewModels, repositories, and browser download `expect/actual` live in `:app:shared` (`commonMain` + `wasmJsMain`). `:app:webApp` only mounts the shell. Android/desktop/JS targets out of v1 scope.",
+  "out_of_scope": "- Admin user CRUD and `POST /users/{id}/anonymize` (`spec-05-members`).\n- `PUT/DELETE /me/avatar` upload UI/routes (`platform-files`).\n- Sessions management UI (owned by `platform-web-shell`).\n- Public `/public/members` filtering (`spec-05-members`).\n- Android, desktop, JS, iOS clients.",
+  "external_systems": [],
+  "auth": {
+    "client": "Bearer JWT via `SessionManager`; setup and export require logged-in user.",
+    "server": "Bearer JWT; `GET /me`, `PATCH /me`, and `GET /me/export` are on `ConsentRequiredPlugin` allowlist."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §5.4",
+    "docs/especificacion-tecnica.md §6.7 (/me/export)",
+    "docs/especificacion-tecnica.md §7.3",
+    "docs/decisiones.md (RGPD)"
+  ],
+  "images": [
+    {
+      "path": "assets/el-meu-perfil-desktop.png",
+      "caption": "El meu perfil: navy hero banner with avatar + Canvia la foto, 3 editable white cards (Informació personal incl. Idioma de la interfície, Contacte i emergència, Privacitat i dades with RGPD JSON export), and right read-only card with yellow top stripe",
+      "kind": "desktop"
+    }
+  ],
+  "components": [
+    {
+      "name": "MeExportResponse",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/api/MeExportResponse.kt",
+      "decision": "create",
+      "usage": "Stable RGPD export JSON envelope (`exportedAt`, `formatVersion`, `user: UserSelf`, `positions`, `attendance`, `documents`, `sessions`) — avoids duplicating `account`/`orgRoles` already inside `UserSelf`.",
+      "notes": "Also extend `MuixerangaApi.exportMe(): MeExportResponse`.",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["server", "web"]
+    },
+    {
+      "name": "MeExportService",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/me/MeExportService.kt",
+      "decision": "create",
+      "usage": "Aggregate `UserSelf` (incl. `notes`, `emergencyContact`, `isMinor`, `guardians` if minor, `account`, `orgRoles`), own `positions`, own `attendance`, own `documents` metadata (`id`, `title`, `kind`, `date`, `file`, `createdAt`), and own `sessions` summaries.",
+      "notes": "Never exposes `google_identities`, `refresh_tokens`, or other users' data.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "MeExportRoutes",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/routes/MeExportRoutes.kt",
+      "decision": "create",
+      "usage": "`GET /api/v1/me/export` returning `application/json` with `Content-Disposition: attachment; filename=\"muixeranga-dades-YYYY-MM-DD.json\"`.",
+      "notes": "Also update `openapi.yaml`.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "ConsentRules",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/me/ConsentRules.kt",
+      "decision": "create",
+      "usage": "Harden `PATCH /me`: `dataProcessing` monotonic (`false -> true` only), require `signedBy` when enabling `dataProcessing`, auto-stamp `signedAt = Clock.System.now()` if omitted on consent change, reject `dataProcessing = false` once `true` with `422`.",
+      "notes": "Plugged into `MeRoutes` from `platform-server-auth`.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "BrowserFileDownload (expect/actual)",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/platform/BrowserFileDownload.kt",
+      "decision": "create",
+      "usage": "`expect fun downloadBytes(filename: String, mimeType: String, bytes: ByteArray)` with `wasmJsMain` actual creating a `Blob` + temporary `<a download>` click, and minimal no-op actuals in other targets so multiplatform compilation stays green.",
+      "notes": "Reused by calendar export (`spec-03-calendar`) and document download (`spec-08-documents`).",
+      "layer": "platform",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "ProfileRepository",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/profile/ProfileRepository.kt",
+      "decision": "create",
+      "usage": "Wraps `MuixerangaApi.getMe()`, `patchMe()`, `exportMe()` and updates shared `SessionManager` / `AuthViewModel` Me state after consent or profile save.",
+      "notes": "",
+      "layer": "repository",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "ProfileViewModel",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/profile/ProfileViewModel.kt",
+      "decision": "create",
+      "usage": "Exposes `StateFlow<ProfileUiState>` handling Setup, Profile edit (client-side `:core` validation + `409 version_conflict` reload prompt), and JSON export download.",
+      "notes": "",
+      "layer": "viewmodel",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "ConsentSetupScreen",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/profile/ConsentSetupScreen.kt",
+      "decision": "create",
+      "usage": "Blocking first-run screen at `/configuracio-inicial`: privacy policy link (`https://muixerangadelx.com/privacitat`, configurable via `PRIVACY_POLICY_URL`), mandatory `dataProcessing` checkbox, `signedBy` text field (prefilled with full name, tutor guidance if `isMinor`), optional toggles for `publicProfile`/`imageRights`/`whatsapp`.",
+      "notes": "All copy in Valencian.",
+      "layer": "ui",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "ProfileScreen",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/profile/ProfileScreen.kt",
+      "decision": "create",
+      "usage": "Route `/el-meu-perfil` matching mockup: navy `#14005E` hero banner (red avatar circle, full name, `«nickname»`, role/area badges, outlined `Canvia la foto` hook for `platform-files`), 2-column layout with left editable cards (`Informació personal` incl. `preferredLocale` «Idioma de la interfície», `Contacte i emergència`, `Privacitat i dades` switches + «Descarrega les meues dades» JSON callout + `DESA` CTA) and right warm-grey card with yellow `#FFC432` top stripe (`Informació de només lectura`: Nom, Cognoms, Data de naixement/edat, Estat, Tipus de membre, Càrrecs actuals, plus `notes` and `guardians` when present/minor).",
+      "notes": "",
+      "layer": "ui",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "AppNavigation consent gate",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/navigation/AppNavigation.kt",
+      "decision": "modify",
+      "usage": "Connect `/configuracio-inicial` and `/el-meu-perfil` to real screens, redirect automatically when `!me.consent.dataProcessing` or on global `403 consent_required` event from `SessionManager`.",
+      "notes": "",
+      "layer": "navigation",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    }
+  ],
+  "structure": "End-to-end RGPD flow:\n\n```text\nLogin (platform-web-shell)\n  → AuthViewModel loads GET /api/v1/me\n  → if !me.consent.dataProcessing → redirect /configuracio-inicial (ConsentSetupScreen)\n  → user accepts → PATCH /api/v1/me → AuthViewModel refreshes Me → navigate home\n\nProfileScreen (/el-meu-perfil)\n  → Save → validate (:core) → PATCH /api/v1/me (with version & PatchField)\n  → Export → GET /api/v1/me/export → BrowserFileDownload.downloadBytes(...)\n```\n\n`MeExportResponse` JSON structure (`formatVersion = 1`):\n- `exportedAt`: UTC `Instant`\n- `formatVersion`: `1`\n- `user`: `UserSelf` (includes `consent`, `account` self-safe, `emergencyContact`, `isMinor`, `guardians` if minor, `notes`, `orgRoles`)\n- `positions`: list of `UserPositionSummary` for this user\n- `attendance`: list of own `Attendance` rows\n- `documents`: list of own `Document` metadata (`id`, `title`, `kind`, `date`, `file`, `notes`, `createdAt`) where `user_id = me`\n- `sessions`: list of `SessionSummary` (no token hashes)",
+  "sections": [
+    {
+      "title": "Consent setup rules (server + web)",
+      "description": "Screen title «Configuració inicial». Displays a link to the privacy policy (`https://muixerangadelx.com/privacitat`, overridable via compile-time config), a mandatory checkbox for `consent.dataProcessing`, and a `signedBy` input (defaulting to the user's name; for minors, copy explicitly states that a legal guardian must sign and enter their name).",
+      "behavior": "Submit is disabled until `dataProcessing` is checked and `signedBy` is non-blank. On `PATCH /me`, the server rejects setting `dataProcessing` from `true` back to `false` (`422 validation_failed`), requires `signedBy` when transitioning `false -> true`, and stamps `signedAt` server-side with current UTC `Instant` whenever consent flags change if the client omitted it. On success, `ProfileRepository` notifies `AuthViewModel` so the consent gate unlocks immediately."
+    },
+    {
+      "title": "Minor visibility consistency (`decisiones.md`)",
+      "description": "Both `GET /me` and `GET /me/export` follow the exact same self-visibility rule: the authenticated user sees `emergencyContact`, `isMinor`, `notes`, and (when `isMinor == true`) their `guardians` list.",
+      "behavior": "Neither `GET /me` nor `GET /me/export` exposes board-only fields (`documentId`, `memberNumber`, `leftAt`, `birthDate`) or server-only tables (`google_identities`, `refresh_tokens`)."
+    },
+    {
+      "title": "Profile editing and download (`ProfileScreen`)",
+      "description": "«El meu perfil» renders the navy hero banner (avatar, name, nickname, badges, «Canvia la foto» wired once `platform-files` lands) above a 2-column layout (stacked on mobile): left column has 3 bordered white cards — `Informació personal` (malnom, telèfon, carrer i número, codi postal, ciutat, sobre mi, talla de camiseta, talla de pantaló, **idioma de la interfície** `preferredLocale`), `Contacte i emergència`, and `Privacitat i dades` (switches `Perfil públic a la web`, `Drets d'imatge`, `Grup de WhatsApp` + callout box «Descarrega les meues dades») with red `DESA` button; right column shows the yellow-top-bordered `Informació de només lectura` card («Per a canviar-ho, parla amb la junta»: Nom, Cognoms, Data de naixement, Estat, Tipus de membre, Càrrecs actuals, plus `notes` and `guardians` if minor).",
+      "behavior": "Sends only changed fields (including `preferredLocale`) via `PatchField<T>` + `version`. On `409 version_conflict`, shows «Algú ha modificat aquest element mentre l'editaves» with a «Recarrega» action. Clicking «Descarrega les meues dades» calls `GET /api/v1/me/export` and downloads `muixeranga-dades-YYYY-MM-DD.json` via `BrowserFileDownload`."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "RGPD personal data export",
+      "method": "GET",
+      "path": "/api/v1/me/export",
+      "notes": "Returns `MeExportResponse` JSON (incl. own documents metadata, notes, guardians if minor). Allowed before `dataProcessing`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Update own profile & consent",
+      "method": "PATCH",
+      "path": "/api/v1/me",
+      "notes": "Hardened consent rules (`ConsentRules`) + `PatchField` + `version`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Current user (consent gate)",
+      "method": "GET",
+      "path": "/api/v1/me",
+      "notes": "Client checks `consent.dataProcessing` for setup gate.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    }
+  ],
+  "persistence": "Read-only SQLDelight aggregation over v0.2 tables (`users`, `user_accounts`, `user_guardians`, `org_roles`, `org_role_holders`, `positions`, `attendance`, `documents`, `sessions`). No new migrations.",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": ":core MeExportResponse + MuixerangaApi.exportMe()",
+      "spec": "Add `MeExportResponse` (and `DocumentSummary` if not in core yet) to `:core` and add `exportMe(): MeExportResponse` to `MuixerangaApi`.",
+      "acceptance_criteria": [
+        "`commonTest` round-trip serialization passes with `formatVersion = 1`"
+      ],
+      "dependencies": [],
+      "components": ["MeExportResponse"],
+      "target": "core",
+      "module": ":core",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T2",
+      "title": "SQLDelight export queries + MeExportService + route",
+      "spec": "Add `.sq` reads for own `positions`, `attendance`, `documents` (`WHERE user_id = :userId`), and `sessions`. Implement `MeExportService` reusing `UserSelfMapper` and register `GET /api/v1/me/export`. Update `openapi.yaml`.",
+      "acceptance_criteria": [
+        "`:server:test` verifies 200 JSON includes `notes`, `guardians` (minor), `attendance`, and own `documents` only",
+        "`:server:test` verifies `googleSub` and refresh hashes never appear in output",
+        "Export works when `consent.dataProcessing == false`"
+      ],
+      "dependencies": ["T1"],
+      "components": ["MeExportService", "MeExportRoutes"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T3",
+      "title": "Harden ConsentRules on PATCH /me",
+      "spec": "Enforce monotonic `dataProcessing` (`true -> false` rejected with `422`), require non-blank `signedBy` when enabling `dataProcessing`, auto-populate `signedAt` server-side when omitted on consent changes, and validate editable self fields with `:core` validators.",
+      "acceptance_criteria": [
+        "`PATCH /me` setting `dataProcessing=false` after `true` returns `422 validation_failed`",
+        "Enabling `dataProcessing=true` without `signedBy` returns `422`",
+        "Idempotent `dataProcessing=true` succeeds"
+      ],
+      "dependencies": [],
+      "components": ["ConsentRules"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T4",
+      "title": "BrowserFileDownload expect/actual in :app:shared",
+      "spec": "Create `expect fun downloadBytes(filename: String, mimeType: String, bytes: ByteArray)` in `:app:shared` `commonMain` with `wasmJsMain` Blob+anchor implementation and compile-safe no-op actuals in other targets.",
+      "acceptance_criteria": [
+        "`./gradlew :app:shared:compileKotlinWasmJs :app:shared:jvmTest` succeeds"
+      ],
+      "dependencies": [],
+      "components": ["BrowserFileDownload (expect/actual)"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T5",
+      "title": "ProfileRepository + ProfileViewModel",
+      "spec": "Create `ProfileRepository` (wired in Koin) and `ProfileViewModel` with `StateFlow<ProfileUiState>`, client validation, `409 version_conflict` reload handling, consent accept flow updating `AuthViewModel` Me state, and JSON export trigger.",
+      "acceptance_criteria": [
+        "`jvmTest` verifies consent acceptance refreshes shared Me state",
+        "`jvmTest` verifies `409 version_conflict` sets conflict UI flag"
+      ],
+      "dependencies": ["T1", "T4"],
+      "components": ["ProfileRepository", "ProfileViewModel"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T6",
+      "title": "ConsentSetupScreen + ProfileScreen + Navigation gate",
+      "spec": "Implement `ConsentSetupScreen` (`/configuracio-inicial`) and `ProfileScreen` (`/el-meu-perfil`) in Valencian Material 3, and wire global `consent_required` redirect + post-login consent check in `AppNavigation`.",
+      "acceptance_criteria": [
+        "Submit disabled until privacy checkbox ticked and `signedBy` filled",
+        "User without consent is redirected to `/configuracio-inicial` on any protected route",
+        "Export downloads `muixeranga-dades-YYYY-MM-DD.json` on `wasmJs`"
+      ],
+      "dependencies": ["T5"],
+      "components": ["ConsentSetupScreen", "ProfileScreen", "AppNavigation consent gate"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T7",
+      "title": "End-to-end verification + OpenAPI sync",
+      "spec": "Run `:server:test` (including `OpenApiRouteSyncTest` once `platform-openapi-deploy` exists), `:app:shared:jvmTest`, and `:app:webApp:compileKotlinWasmJs`.",
+      "acceptance_criteria": [
+        "`./gradlew :server:test :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes"
+      ],
+      "dependencies": ["T2", "T3", "T6"],
+      "components": [],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server", "web"]
+    }
+  ]
+}

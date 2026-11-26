@@ -1,0 +1,266 @@
+{
+  "feature_name": "Platform OpenAPI, CI and deploy",
+  "feature_slug": "platform-openapi-deploy",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala",
+  "scaffold": "",
+  "summary": "Serve **OpenAPI 3.1** (`/api/v1/openapi.yaml`), **open read-only Swagger UI** (`/api/v1/docs` without live data queries), **route sync test** (§10.1.6), **`docs/api.md`**, **fat JAR**, `scripts/deploy-*.sh`, and GitHub **CI + deploy** workflows (fixing `app/webApp/**` path filter and NFR-01 wasm bundle size check).",
+  "overview": "Closing **Fase 1 base** delivery artifacts: external clients and Astro get a verified OpenAPI 3.1 contract, operators get a readable Swagger UI without Bearer friction, and `main` deploys safely only when all tests pass.\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §6.1, §8 (NFR-01), §9.2–9.5, §10.1.6 · `docs/decisiones.md`.\n\n**Prerequisites**\n- `platform-server-infra` (`GET /api/health`, `ENABLE_API_DOCS` defaulting to `true`).\n- `platform-server-auth` (`/api/v1/auth/*`, `/api/v1/me*`).\n- Every subsequent feature slice updates `openapi.yaml` in the same PR (enforced by `OpenApiRouteSyncTest`).\n\n**OpenAPI & Swagger UI policy (`decisiones.md`)**\n- File: `server/src/main/resources/openapi/openapi.yaml` (OpenAPI **3.1.0**), served publicly at `GET /api/v1/openapi.yaml`.\n- **Swagger UI (`GET /api/v1/docs`)** is **publicly open by default** (`ENABLE_API_DOCS=true`, can be toggled off via env) and configured as **read-only documentation** (`supportedSubmitMethods: []`) so anyone can browse the contract cleanly without needing a browser Bearer token and without executing live queries against real colla data.\n- `OpenApiRouteSyncTest` validates YAML syntax + OpenAPI 3.1 structure and checks 1:1 parity between Ktor-registered API routes and paths/methods in `openapi.yaml` (excluding static Swagger UI assets and `/openapi.yaml`/`/docs` themselves).\n\n**Deploy & CI policy (Tabala paths)**\n- Fat JAR: `./gradlew :server:buildFatJar` → `server/build/libs/server-all.jar`.\n- Webapp: `./gradlew :app:webApp:wasmJsBrowserDistribution -PapiBaseUrl=https://api.muixerangadelx.com/api/v1` → `app/webApp/build/dist/wasmJs/productionExecutable/`.\n- CI measures and logs wasm distribution transferred size against the NFR-01 15 MB guideline.\n- Path filters in `deploy-web.yml` watch `app/webApp/**`, `app/shared/**`, `core/**` (not `webApp/**`).\n- Secrets: `DEPLOY_HOST`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS` only — never `JWT_SECRET`.\n\n**Acceptance (slice)**\n- `GET /api/v1/openapi.yaml` returns `200` valid OpenAPI 3.1 YAML.\n- `GET /api/v1/docs` returns `200` Swagger UI HTML with `supportedSubmitMethods: []` when `ENABLE_API_DOCS=true` (and `404` when `ENABLE_API_DOCS=false`).\n- `OpenApiRouteSyncTest` passes in `:server:test` and fails if a route is missing from `openapi.yaml` or vice versa.\n- `scripts/deploy-server.sh` (prunes releases keeping last 5, never deleting active target) and `scripts/deploy-web.sh` exist and are executable.\n- `.github/workflows/ci.yml`, `deploy-server.yml`, and `deploy-web.yml` match Tabala module paths and v1 scope (no Android block for v1).\n- `docs/api.md` documents external client flow (`client: \"native\"`, OAuth Playground, `curl` examples).",
+  "client_scope": {
+    "preset": "custom",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": false,
+    "ios": false,
+    "external_public_api": true
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "webApp": ":app:webApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "No Compose UI. Vendored Swagger UI static assets are served by `:server` at `/api/v1/docs`.",
+  "out_of_scope": "- Implementing new business REST endpoints (only document currently registered routes).\n- Full §10.1.1 permission matrix for future feature routes (each feature slice adds its own permission-matrix tests for all roles).\n- Editing VPS Caddyfile or systemd unit (§9.4 reference only).\n- Android/desktop CI builds (deferred out of v1).\n- Astro site deployment.",
+  "external_systems": [
+    {
+      "name": "GitHub Actions",
+      "role": "PR/push CI checks + automated SSH deploy on `main` when tests pass."
+    },
+    {
+      "name": "VPS (Netcup / Debian 13)",
+      "role": "Target for `deploy-server.sh` and `deploy-web.sh`; health poll at `https://api.muixerangadelx.com/api/health`."
+    }
+  ],
+  "auth": {
+    "client": "N/A.",
+    "server": "`GET /api/v1/openapi.yaml` is public. `GET /api/v1/docs` is publicly open when `ENABLE_API_DOCS=true` (default) in read-only mode (`supportedSubmitMethods: []`) so it never queries real data."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §6.1",
+    "docs/especificacion-tecnica.md §8 (NFR-01)",
+    "docs/especificacion-tecnica.md §9.2–9.5",
+    "docs/especificacion-tecnica.md §10.1.6",
+    "docs/decisiones.md"
+  ],
+  "images": [],
+  "components": [
+    {
+      "name": "openapi.yaml",
+      "location": "server/src/main/resources/openapi/openapi.yaml",
+      "decision": "create",
+      "usage": "Authoritative OpenAPI 3.1.0 specification covering all implemented endpoints (`/api/health`, `/api/v1/auth/*`, `/api/v1/me*`) and reusable schemas (`ApiErrorResponse`, `PagedResponse`, `FileRef`, `UserSelf`, etc.).",
+      "notes": "Expanded by every subsequent feature slice in the same PR.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "OpenApiRoutes + vendored Swagger UI",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/routes/OpenApiRoutes.kt",
+      "decision": "create",
+      "usage": "Serve `/api/v1/openapi.yaml` (`application/yaml`) and vendored static Swagger UI at `/api/v1/docs` (pinned version under `server/src/main/resources/swagger-ui/`, configured with `url: '/api/v1/openapi.yaml'` and `supportedSubmitMethods: []`).",
+      "notes": "Returns `404` on `/api/v1/docs` only when `ENABLE_API_DOCS=false`.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "OpenApiRouteSyncTest",
+      "location": "server/src/test/kotlin/com/bitdesal/tabala/openapi/OpenApiRouteSyncTest.kt",
+      "decision": "create",
+      "usage": "Validate OpenAPI 3.1 YAML schema structure and assert exact parity between Ktor-registered API `(METHOD, normalizedPath)` pairs and `openapi.yaml` operations.",
+      "notes": "Excludes static Swagger assets and doc self-routes.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "test",
+      "clients": ["server"]
+    },
+    {
+      "name": "server/build.gradle.kts",
+      "location": "server/build.gradle.kts",
+      "decision": "modify",
+      "usage": "Configure Ktor `fatJar { archiveFileName.set(\"server-all.jar\") }` and ensure Flyway `.sql`, `openapi.yaml`, and `swagger-ui/` assets are packaged in the JAR.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "deploy-server.sh & deploy-web.sh",
+      "location": "scripts/",
+      "decision": "create",
+      "usage": "Executable bash scripts with `set -euo pipefail`: verify artifact exists, `scp`/`rsync`, symlink & `systemctl restart`, health poll loop (`30 × 2s`), and release pruning (keep newest 5 without deleting active symlink target).",
+      "notes": "Uses Tabala paths (`app/webApp/build/dist/wasmJs/productionExecutable/`).",
+      "layer": "scripts",
+      "module": "repo",
+      "sourceSet": "n/a",
+      "clients": ["server", "web"]
+    },
+    {
+      "name": "CI & Deploy workflows",
+      "location": ".github/workflows/",
+      "decision": "modify",
+      "usage": "Update `ci.yml` (`:core:jvmTest`, `:server:test`, `:app:shared:jvmTest`, `:app:webApp:wasmJsBrowserDistribution` + NFR-01 size report); create `deploy-server.yml` (`server/**`, `core/**`) and `deploy-web.yml` (`app/webApp/**`, `app/shared/**`, `core/**`).",
+      "notes": "Leave `ai-code-review.yml` untouched.",
+      "layer": "ci",
+      "module": "repo",
+      "sourceSet": "n/a",
+      "clients": ["server", "web"]
+    },
+    {
+      "name": "docs/api.md",
+      "location": "docs/api.md",
+      "decision": "create",
+      "usage": "Quick-start guide for external API consumers (Astro, scripts, future mobile apps): OpenAPI/Swagger URLs, obtaining a Google ID token via OAuth 2.0 Playground, `curl` examples for `/auth/google` (`native`), `/auth/refresh`, and authenticated calls.",
+      "notes": "",
+      "layer": "docs",
+      "module": "repo",
+      "sourceSet": "n/a",
+      "clients": ["server", "web"]
+    }
+  ],
+  "structure": "Documentation & delivery pipeline:\n\n```text\nPR / Push\n  → .github/workflows/ci.yml\n      ├─ ./gradlew :core:jvmTest :server:test :app:shared:jvmTest\n      ├─ OpenApiRouteSyncTest (inside :server:test)\n      └─ ./gradlew :app:webApp:wasmJsBrowserDistribution + measure bundle size (NFR-01)\n\nPush to main (server/** or core/**)\n  → deploy-server.yml → :server:test → :server:buildFatJar → scripts/deploy-server.sh\n\nPush to main (app/webApp/**, app/shared/**, or core/**)\n  → deploy-web.yml → :app:shared:jvmTest → wasmJsBrowserDistribution → scripts/deploy-web.sh\n\nRuntime\n  GET /api/v1/openapi.yaml → classpath openapi/openapi.yaml\n  GET /api/v1/docs         → vendored Swagger UI (read-only, supportedSubmitMethods: [])\n```",
+  "sections": [
+    {
+      "title": "Read-only public Swagger UI (`decisiones.md`)",
+      "description": "Vendor pinned `swagger-ui-dist` assets (`swagger-ui-bundle.js`, `swagger-ui.css`, `index.html`) under `server/src/main/resources/swagger-ui/` so `/api/v1/docs` has zero third-party CDN dependencies.",
+      "behavior": "Initialize Swagger UI with `url: '/api/v1/openapi.yaml'`, `supportedSubmitMethods: []` (disables interactive Try-it-out so no real data queries happen from docs), and `validatorUrl: null`. Controlled by `ENABLE_API_DOCS` (default `true`)."
+    },
+    {
+      "title": "OpenApiRouteSyncTest parity rules (§10.1.6)",
+      "description": "Introspect Ktor's `RoutingRoot` tree inside `testApplication` and parse `openapi.yaml` with a YAML/OpenAPI parser (e.g. `snakeyaml` or `swagger-parser` in `testImplementation`).",
+      "behavior": "Verify `openapi` starts with `3.1.`, verify every registered API `(METHOD, path)` exists in `openapi.yaml`, and verify every operation in `openapi.yaml` exists in Ktor (excluding `/api/v1/openapi.yaml`, `/api/v1/docs`, and static asset routes). Fail with an explicit diff listing missing/extra operations."
+    },
+    {
+      "title": "Safe deployment & rollback (§9.3)",
+      "description": "`scripts/deploy-server.sh` requires `DEPLOY_HOST`, checks `server/build/libs/server-all.jar` exists, uploads to `/opt/muixeranga/releases/app-YYYYMMDD-HHMM.jar`, updates `/opt/muixeranga/app.jar`, restarts `muixeranga`, polls `https://api.muixerangadelx.com/api/health` up to 60 s, and prunes older jars keeping the 5 most recent (never deleting the active symlink target).",
+      "behavior": "Exit non-zero immediately if any step or health poll fails. Document one-line manual rollback (`ln -sfn /opt/muixeranga/releases/<prev>.jar /opt/muixeranga/app.jar && sudo systemctl restart muixeranga`) in `docs/api.md`."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "OpenAPI 3.1 YAML",
+      "method": "GET",
+      "path": "/api/v1/openapi.yaml",
+      "notes": "Public. `Content-Type: application/yaml; charset=utf-8`.",
+      "implemented_on": "server",
+      "consumed_by": [],
+      "auth": "none"
+    },
+    {
+      "name": "Swagger UI (read-only)",
+      "method": "GET",
+      "path": "/api/v1/docs",
+      "notes": "Public when `ENABLE_API_DOCS=true` (default); read-only (`supportedSubmitMethods: []`). `404` if disabled.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "none"
+    }
+  ],
+  "persistence": "None.",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Author OpenAPI 3.1 baseline (`openapi.yaml`)",
+      "spec": "Create `server/src/main/resources/openapi/openapi.yaml` (OpenAPI 3.1.0) describing `GET /api/health`, `/api/v1/auth/*`, `/api/v1/me*`, `bearerAuth` security scheme, `ApiErrorResponse` schema, and shared component schemas.",
+      "acceptance_criteria": [
+        "Valid OpenAPI 3.1 YAML parsed cleanly in tests",
+        "All currently implemented infra+auth routes are documented with status codes and schemas"
+      ],
+      "dependencies": [],
+      "components": ["openapi.yaml"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T2",
+      "title": "OpenApiRoutes + vendored read-only Swagger UI",
+      "spec": "Vendor pinned `swagger-ui-dist` files under `server/src/main/resources/swagger-ui/`, configure `supportedSubmitMethods: []`, and register `GET /api/v1/openapi.yaml` + `GET /api/v1/docs` (returning 404 only when `ENABLE_API_DOCS=false`).",
+      "acceptance_criteria": [
+        "`GET /api/v1/openapi.yaml` returns 200 YAML",
+        "`GET /api/v1/docs` returns 200 HTML referencing `/api/v1/openapi.yaml` and `supportedSubmitMethods: []` when enabled, and 404 when `ENABLE_API_DOCS=false`"
+      ],
+      "dependencies": ["T1"],
+      "components": ["OpenApiRoutes + vendored Swagger UI"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T3",
+      "title": "OpenApiRouteSyncTest (§10.1.6)",
+      "spec": "Implement `OpenApiRouteSyncTest` in `:server:test` introspecting Ktor routes vs `openapi.yaml` paths/methods and asserting OpenAPI 3.1 validity.",
+      "acceptance_criteria": [
+        "Test passes on current route tree",
+        "Unit test verifies mismatch produces clear missing/extra diff"
+      ],
+      "dependencies": ["T2"],
+      "components": ["OpenApiRouteSyncTest"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T4",
+      "title": "Configure :server:buildFatJar (`server-all.jar`)",
+      "spec": "Configure Ktor fat JAR output name `server-all.jar` in `server/build.gradle.kts` and verify Flyway SQL, `openapi.yaml`, and `swagger-ui/` assets are included inside the JAR.",
+      "acceptance_criteria": [
+        "`./gradlew :server:buildFatJar` generates `server/build/libs/server-all.jar` containing migrations and OpenAPI resources"
+      ],
+      "dependencies": ["T2"],
+      "components": ["server/build.gradle.kts"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T5",
+      "title": "Create scripts/deploy-server.sh and scripts/deploy-web.sh",
+      "spec": "Create both executable scripts per §9.3 using Tabala paths (`app/webApp/build/dist/wasmJs/productionExecutable/`), pre-checks, health poll loop, and retention of the last 5 server JAR releases.",
+      "acceptance_criteria": [
+        "Both scripts pass `bash -n` and `shellcheck` (if installed) and have `+x` permission"
+      ],
+      "dependencies": ["T4"],
+      "components": ["deploy-server.sh & deploy-web.sh"],
+      "target": "repo",
+      "module": "repo",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T6",
+      "title": "Update ci.yml + add deploy-server.yml and deploy-web.yml",
+      "spec": "Update `.github/workflows/ci.yml` for v1 targets (`:core:jvmTest`, `:server:test`, `:app:shared:jvmTest`, `:app:webApp:wasmJsBrowserDistribution` + print compressed wasm transfer size vs 15 MB NFR-01 target). Create `deploy-server.yml` (`server/**`, `core/**`) and `deploy-web.yml` (`app/webApp/**`, `app/shared/**`, `core/**`) running tests before deploy and using only `DEPLOY_HOST`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`.",
+      "acceptance_criteria": [
+        "`deploy-web.yml` triggers on `app/webApp/**`, `app/shared/**`, `core/**`",
+        "No workflow references `JWT_SECRET` or `FIREBASE_*`"
+      ],
+      "dependencies": ["T3", "T5"],
+      "components": ["CI & Deploy workflows"],
+      "target": "repo",
+      "module": "repo",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T7",
+      "title": "Write docs/api.md",
+      "spec": "Create `docs/api.md` explaining base URL, `/api/v1/openapi.yaml` and `/api/v1/docs`, obtaining a Google ID token for testing (OAuth 2.0 Playground), `curl` flows for `native` auth/refresh/API calls, and manual rollback procedure.",
+      "acceptance_criteria": [
+        "`docs/api.md` covers end-to-end `curl` workflow per §10.2"
+      ],
+      "dependencies": ["T1", "T5"],
+      "components": ["docs/api.md"],
+      "target": "repo",
+      "module": "repo",
+      "clients_affected": ["server", "web"]
+    }
+  ]
+}

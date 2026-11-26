@@ -1,0 +1,276 @@
+{
+  "feature_name": "Platform server infrastructure",
+  "feature_slug": "platform-server-infra",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala",
+  "scaffold": "",
+  "summary": "Ktor foundation on `:server`: environment config, SQLite WAL single-writer/multi-reader pool (NFR-03), JSON body limit (1 MB), trusted `127.0.0.1` forwarded headers, graceful SIGTERM shutdown, `GET /api/health`, unified JSON errors, and PII-free request logging. **Server only** — no auth routes, no schema v0.2, no UI.",
+  "overview": "First delivery slice for the Muixeranga management API. Turns the current scaffold (`GET /` hello on `0.0.0.0`) into a production-shaped JVM 21 process: read env per `docs/especificacion-tecnica.md` §9.1, bind `APP_HOST` (default `127.0.0.1`), enforce NFR-03/05/06/10, expose `GET /api/health` without auth, and install cross-cutting plugins future routes will reuse.\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §6.1, §6.3, §8, §9.1 · `docs/decisiones.md` (Google OIDC + own sessions later — **not** Firebase).\n\n**Goals**\n- Fail fast on startup when mandatory env vars are missing or `JWT_SECRET` has fewer than 32 decoded bytes.\n- `GET /api/health` → `200 {\"status\":\"ok\",\"version\":\"…\",\"db\":\"ok\"}` or `503` if SQLite fails `SELECT 1`.\n- Unified JSON error envelope per §6.3 (`code`, `message` in Valencian, optional `fields`, optional `current`), using `:core` `ApiErrorResponse` once available or created minimally in `:core` and extended by `platform-core-contract`.\n- Enforce 1 MB body limit for JSON requests (NFR-05), exempting multipart upload routes configured later in `platform-files`.\n- Trust `X-Forwarded-For` / `X-Forwarded-Proto` **only** when the direct peer is `127.0.0.1` (Caddy reverse proxy, §6.10).\n- CORS configured from `CORS_ORIGINS` with `allowCredentials = true` (never `*` with credentials) plus open `GET` CORS without credentials for `/api/v1/public/*`.\n- Single-writer SQLite connection + concurrent reader connections under WAL with `foreign_keys = ON` and `busy_timeout = 5000` (NFR-03).\n- Sanitized `CallLogging`: one line per request (`method`, `path`, `status`, `durationMs`, `userId` from a shared `AttributeKey` populated by auth slice) — never tokens, cookies, or request bodies.\n- Graceful shutdown on `SIGTERM` closing Netty and SQLite pools cleanly (NFR-10).",
+  "client_scope": {
+    "preset": "server_only",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": false,
+    "ios": false,
+    "external_public_api": false
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "webApp": ":app:webApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "No UI in this slice. Server-only infrastructure; shares minimal `ApiErrorResponse` in `:core`.",
+  "out_of_scope": "- Google OIDC auth, JWT issuance, `/api/v1/auth/*`, `/api/v1/me*` (`platform-server-auth`).\n- Schema v0.2 migrations (`platform-schema-v02`) and business REST routes.\n- OpenAPI/Swagger and deploy scripts (`platform-openapi-deploy`).\n- Rate limiting (`platform-rate-limits` and auth slice).\n- File storage / multipart uploads (`platform-files`).\n- All client apps (web, Android, desktop, iOS).",
+  "external_systems": [],
+  "auth": {
+    "client": "N/A in this slice.",
+    "server": "No authenticated routes yet. Parse and validate `JWT_SECRET`, `JWT_SECRET_PREVIOUS`, `GOOGLE_CLIENT_IDS`, `GOOGLE_JWKS_URL`, `COOKIE_DOMAIN`, `BOOTSTRAP_ADMIN_EMAIL` in `EnvConfig` for `platform-server-auth`. Expose `RequestUserIdKey: AttributeKey<String>` so auth can attach `userId` for `CallLogging`."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §6.1, §6.3, §6.10",
+    "docs/especificacion-tecnica.md §8 (NFR-01..NFR-10)",
+    "docs/especificacion-tecnica.md §9.1 (environment variables)",
+    "docs/decisiones.md"
+  ],
+  "images": [],
+  "components": [
+    {
+      "name": "ApplicationKt",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/Application.kt",
+      "decision": "modify",
+      "usage": "Entry `embeddedServer(Netty)`, graceful shutdown hook, `Application.module(config)` plugin install order.",
+      "notes": "Bind `config.host` (default `127.0.0.1`) and `config.port` (default `8080`). Remove demo `GET /` hello.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "Database.openDatabase",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/database/Database.kt",
+      "decision": "modify",
+      "usage": "Expose `DatabaseAccess` with Flyway migrate, dedicated single-writer SQLite connection/dispatcher (for transactions) and reader pool (WAL + `foreign_keys=ON` + `busy_timeout=5000`).",
+      "notes": "Keep schema unchanged in this slice; `platform-schema-v02` updates migrations.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "EnvConfig",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/config/EnvConfig.kt",
+      "decision": "create",
+      "usage": "Load and validate all §9.1 env vars; fail fast with clear message when mandatory vars are missing or invalid.",
+      "notes": "Provide `EnvConfig.fromEnv(env)` and a test helper factory in `:server:test` so tests never need real VPS secrets.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "ApiError / ApiErrorResponse",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/api/ApiError.kt",
+      "decision": "create",
+      "usage": "Shared `@Serializable` §6.3 error envelope (`code`, `message`, optional `fields`, optional `current: JsonElement`).",
+      "notes": "Reused and extended with `ErrorCodes` in `platform-core-contract` — do not duplicate.",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["server"]
+    },
+    {
+      "name": "ErrorHandling",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/error/ErrorHandling.kt",
+      "decision": "create",
+      "usage": "`AppException` hierarchy + Ktor `StatusPages` mapping known errors, bad JSON (`400 invalid_json`), body too large (`413`), and unknown exceptions (`500 internal_error` without stack traces).",
+      "notes": "All messages in Valencian.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "TrustedProxyPlugin + RequestLogging",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/http/TrustedProxy.kt",
+      "decision": "create",
+      "usage": "Extract client IP from `X-Forwarded-For` only when remote host is `127.0.0.1` / `::1`; configure `CallLogging` with `RequestUserIdKey` and zero PII/tokens.",
+      "notes": "Reused by `platform-rate-limits` and `platform-server-auth`.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "JsonBodyLimitPlugin",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/http/JsonBodyLimitPlugin.kt",
+      "decision": "create",
+      "usage": "Reject non-multipart request bodies exceeding 1 MB with `413` per NFR-05.",
+      "notes": "Multipart routes enforce per-endpoint file limits in `platform-files`.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "HealthRoutes",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/routes/HealthRoutes.kt",
+      "decision": "create",
+      "usage": "`GET /api/health` outside `/api/v1` returning `status`, `version`, `db` (`200` or `503`).",
+      "notes": "Runs `SELECT 1` on SQLite reader connection.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "ServerModules",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/di/ServerModules.kt",
+      "decision": "create",
+      "usage": "Koin root module providing `EnvConfig`, `DatabaseAccess`, and shared `Json`.",
+      "notes": "Installed in `Application.module`.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    }
+  ],
+  "structure": "Server-only Ktor plugin pipeline:\n\n```text\nApplication.module(config)\n  ├─ EnvConfig validation (fail-fast)\n  ├─ Koin (ServerModules: EnvConfig, DatabaseAccess, Json)\n  ├─ TrustedProxy (trust X-Forwarded-* only from 127.0.0.1)\n  ├─ CallLogging (method, path, status, duration, RequestUserIdKey — no PII)\n  ├─ ContentNegotiation (kotlinx.serialization JSON UTF-8)\n  ├─ JsonBodyLimitPlugin (1 MB for non-multipart)\n  ├─ CORS (CORS_ORIGINS + allowCredentials; open GET for /api/v1/public/*)\n  ├─ StatusPages (ErrorHandling → ApiErrorResponse)\n  └─ routing\n       ├─ GET /api/health\n       └─ route(\"/api/v1\") { /* future slices */ }\n```",
+  "sections": [
+    {
+      "title": "Environment validation rules (§9.1)",
+      "description": "Mandatory variables checked on startup: `DB_PATH`, `FILES_DIR`, `JWT_SECRET`, `GOOGLE_CLIENT_IDS`, `PUBLIC_BASE_URL`, `CORS_ORIGINS`. Optional variables with defaults: `APP_PORT=8080`, `APP_HOST=127.0.0.1`, `JWT_SECRET_PREVIOUS=null`, `GOOGLE_JWKS_URL=https://www.googleapis.com/oauth2/v3/certs`, `COOKIE_DOMAIN=null` (omitted in local dev → host-only cookie), `ENABLE_API_DOCS=true`, `BOOTSTRAP_ADMIN_EMAIL=null`, `DIPU_CATALOG_LIMIT=5`, `LOG_LEVEL=INFO`.",
+      "behavior": "Validate `JWT_SECRET` has at least 32 raw bytes (attempt Base64 decode first; if valid Base64 use decoded length, else UTF-8 byte length; fail clearly if `< 32`). For local runs, developers supply a `.env` file or env vars; there are no silent insecure defaults for `JWT_SECRET` or `GOOGLE_CLIENT_IDS` in production startup. Tests inject `EnvConfig` directly via constructor."
+    },
+    {
+      "title": "SQLite concurrency pool (NFR-03)",
+      "description": "Wrap `openDatabase()` in `DatabaseAccess` exposing `read { }` (bounded reader pool on `Dispatchers.IO`) and `writeTransaction { }` (serialized single-writer connection/mutex on `Dispatchers.IO`) so concurrent requests never hit `SQLITE_BUSY` write races while reads stay fast.",
+      "behavior": "Every connection enables `PRAGMA foreign_keys = ON`, `journal_mode = WAL`, and `busy_timeout = 5000`. On `ApplicationStopped` / `SIGTERM`, drain and close connections cleanly."
+    },
+    {
+      "title": "Logging and error contract (NFR-06, §6.3)",
+      "description": "Logback outputs plain text lines to stdout (captured by journald) respecting `LOG_LEVEL`. Format includes HTTP method, path (without query secrets), status, duration in ms, and `call.attributes.getOrNull(RequestUserIdKey) ?: \"-\"`.",
+      "behavior": "Never log `Authorization`, `Cookie`, `Set-Cookie`, or request/response bodies. `StatusPages` maps `BadRequestException` / `SerializationException` → `400 invalid_json`, `AppException` → its status/code/fields/current, and any unhandled `Throwable` → `500 internal_error` (stack trace logged server-side only, never returned to client)."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "Health check",
+      "method": "GET",
+      "path": "/api/health",
+      "notes": "No auth. Returns `200 {\"status\":\"ok\",\"version\":\"1.0.0\",\"db\":\"ok\"}` when `SELECT 1` succeeds, else `503 {\"status\":\"error\",\"version\":\"1.0.0\",\"db\":\"error\"}`.",
+      "implemented_on": "server",
+      "consumed_by": [],
+      "auth": "none"
+    }
+  ],
+  "persistence": "Reuses existing SQLite file via `DB_PATH` and Flyway startup through `openDatabase()`. Adds NFR-03 single-writer/reader pool wrapper without changing `.sqm` files in this slice.",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Gradle: Ktor plugins + Koin + serialization",
+      "spec": "Extend `gradle/libs.versions.toml` and `server/build.gradle.kts` with `ktor-server-content-negotiation`, `ktor-serialization-kotlinx-json`, `ktor-server-cors`, `ktor-server-status-pages`, `ktor-server-call-logging`, `koin-ktor`, `koin-logger-slf4j`. Enable `kotlinx.serialization` plugin in `:core` for `ApiError`.",
+      "acceptance_criteria": [
+        "`./gradlew :server:compileKotlin :core:compileKotlinJvm` succeeds",
+        "No banned dependencies (Firebase, Exposed, Hilt, Retrofit)"
+      ],
+      "dependencies": [],
+      "components": [],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T2",
+      "title": ":core ApiErrorResponse DTO",
+      "spec": "Create `core/src/commonMain/kotlin/com/bitdesal/tabala/api/ApiError.kt` with `@Serializable` `ApiErrorResponse` and `ApiErrorDetail(code, message, fields?, current?: JsonElement)` matching §6.3.",
+      "acceptance_criteria": [
+        "`:core:compileKotlinJvm` and `:core:compileKotlinWasmJs` succeed",
+        "JSON shape matches §6.3 example"
+      ],
+      "dependencies": ["T1"],
+      "components": ["ApiError / ApiErrorResponse"],
+      "target": "core",
+      "module": ":core",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T3",
+      "title": "EnvConfig §9.1 fail-fast loader",
+      "spec": "Create `config/EnvConfig.kt` reading all §9.1 variables, validating mandatory vars, `JWT_SECRET` ≥ 32 bytes, `CORS_ORIGINS` non-empty list, `DIPU_CATALOG_LIMIT > 0`. Provide clear startup error messages listing missing/invalid vars.",
+      "acceptance_criteria": [
+        "Unit tests verify missing mandatory var throws clear exception",
+        "Unit test verifies short `JWT_SECRET` (< 32 bytes) fails startup",
+        "Optional vars apply documented defaults (`APP_HOST=127.0.0.1`, `ENABLE_API_DOCS=true`)"
+      ],
+      "dependencies": ["T1"],
+      "components": ["EnvConfig"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T4",
+      "title": "DatabaseAccess single-writer + reader pool (NFR-03)",
+      "spec": "Refactor `Database.kt` to expose `DatabaseAccess` wrapping Flyway migration, a single-writer JDBC connection/driver serialized on `Dispatchers.IO`, and reader connections with WAL + `foreign_keys=ON` + `busy_timeout=5000`. Add `ping(): Boolean` executing `SELECT 1` and `close()`.",
+      "acceptance_criteria": [
+        "`DatabaseTest` passes with concurrent read + write coroutines without `SQLITE_BUSY`",
+        "WAL and `foreign_keys=1` verified on both reader and writer connections"
+      ],
+      "dependencies": ["T1"],
+      "components": ["Database.openDatabase"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T5",
+      "title": "Koin, TrustedProxy, CORS, JsonBodyLimit, CallLogging",
+      "spec": "Create `di/ServerModules.kt`, `http/TrustedProxy.kt` (trust `X-Forwarded-For` only from `127.0.0.1`/`::1`, expose `resolvedClientIp()`), `http/JsonBodyLimitPlugin.kt` (1 MB limit for non-multipart), and wire plugins in `Application.module(config)`. Configure CORS from `config.corsOrigins` with `allowCredentials = true`, plus open `GET` CORS without credentials for `/api/v1/public/*`. Bind Netty to `config.host`/`config.port` with graceful shutdown on SIGTERM.",
+      "acceptance_criteria": [
+        "Server binds `127.0.0.1` by default",
+        "`X-Forwarded-For` ignored when remote host is not loopback",
+        "JSON payload > 1 MB rejected with `413`",
+        "CORS never emits `*` with `Access-Control-Allow-Credentials: true`"
+      ],
+      "dependencies": ["T3", "T4"],
+      "components": ["ApplicationKt", "ServerModules", "TrustedProxyPlugin + RequestLogging", "JsonBodyLimitPlugin"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T6",
+      "title": "ErrorHandling (StatusPages)",
+      "spec": "Create `error/ErrorHandling.kt` with `AppException` and `StatusPages` mapping `AppException`, malformed JSON (`400 invalid_json`), body limit (`413 file_too_large` / `bad_request`), and unexpected exceptions (`500 internal_error` without stack trace) to `ApiErrorResponse` JSON.",
+      "acceptance_criteria": [
+        "Test verifies malformed JSON returns 400 `invalid_json` with §6.3 envelope",
+        "Test verifies unhandled exception returns 500 `internal_error` without stack trace in body"
+      ],
+      "dependencies": ["T2", "T5"],
+      "components": ["ErrorHandling"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T7",
+      "title": "GET /api/health + tests",
+      "spec": "Add `routes/HealthRoutes.kt` mounted at `/api/health` (outside `/api/v1`). Remove legacy `GET /` hello route. Replace `ApplicationTest` with health check tests (200 ok + 503 when DB closed), body limit test, and sanitized log output assertion using a test `EnvConfig` helper.",
+      "acceptance_criteria": [
+        "`./gradlew :server:test` passes",
+        "`GET /api/health` returns `200 {\"status\":\"ok\",\"version\":\"1.0.0\",\"db\":\"ok\"}`",
+        "No tokens or PII in captured log output"
+      ],
+      "dependencies": ["T6"],
+      "components": ["HealthRoutes"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    }
+  ]
+}

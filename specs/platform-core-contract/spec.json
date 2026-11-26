@@ -1,0 +1,345 @@
+{
+  "feature_name": "Platform core contract (KMP :core)",
+  "feature_slug": "platform-core-contract",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala",
+  "scaffold": "",
+  "summary": "Shared **v0.2** API contract in `:core`: `@Serializable` DTOs, `MoneyCents` (Long cents ↔ 2-dp JSON euros), `PatchField<T>` (RFC 7386 Merge Patch), enums + Valencian `enumLabels`, shared validation, auth/list primitives, and **MuixerangaApi** (Ktor Client skeleton). **No** `:server` routes, **no** Compose UI.",
+  "overview": "Platform slice that turns the empty `:core` module (`GreetingUtil`) into the single JSON contract for `:server` and `:app:shared` / `:app:webApp` (`wasmJs`).\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §5–6, §12.3 · `docs/decisiones.md`.\n\n**Package layout (normative)**\n```text\ncore/src/commonMain/kotlin/com/bitdesal/tabala/\n├── model/          # v0.2 entity DTOs + nested value types + Patch DTOs\n├── model/enums/    # §5.3 @Serializable enums (MemberStatus uses deleted)\n├── api/            # ApiError, PagedResponse, PatchField, MoneyCents, auth/health/export bodies, Permission\n├── api/client/     # MuixerangaApi + Ktor HttpClient config\n├── validation/     # §6.4 shared rules (pure Kotlin)\n└── i18n/           # §12.3 Valencian enum labels (+ ShirtSize, AreaKind)\n```\n\n**Serialization & contract rules (`decisiones.md`)**\n- Shared `TabalaJson = Json { ignoreUnknownKeys = true; explicitNulls = false }` used by both Ktor server and `MuixerangaApi`.\n- **Money (`MoneyCents`):** `@JvmInline value class MoneyCents(val cents: Long)` with custom `KSerializer` encoding/decoding JSON numbers in euros with 2 decimal places (`450.00` ↔ `45000L`, never `Double` arithmetic).\n- **RFC 7386 Merge Patch (`PatchField<T>`):** sealed interface `Absent` | `Null` | `Value(val value: T)` with custom serializer so PATCH requests distinguish omitted fields (untouched) from explicit `null` (clear field) even when `explicitNulls = false`.\n- **Enums:** `@SerialName(\"snake_case\")` wire values per §5.3, with `MemberStatus` = `active`, `inactive`, `on_leave`, `deleted` (replaces `former`).\n- **Dates/times:** `datetime` → `kotlinx.datetime.Instant`; `date` → `kotlinx.datetime.LocalDate`.\n- **Derived fields** (`orgRoles`, `vacant`, `totalQuantity`, `lowStock`, `overdue`, `isMinor`, `googleLinked`, etc.): present on response DTOs; omitted on create/patch request DTOs.\n\n**Acceptance (slice)**\n- `./gradlew :core:compileKotlinJvm :core:compileKotlinWasmJs` succeeds.\n- `./gradlew :core:jvmTest` green with round-trip JSON fixtures for every entity, `MoneyCents`, `PatchField`, enums, and validation rules.\n- Every §5.3 enum has a Kotlin enum and a Valencian `labelCa()` function (including `ShirtSize`, `AreaKind`, and `MemberStatus.DELETED` → «Eliminat»).\n- `MuixerangaApi` compiles on JVM and `wasmJs` with methods for `GET /api/health` and §6.6/§6.7 auth + `/me` endpoints.\n- `GreetingUtil.kt` removed.",
+  "client_scope": {
+    "preset": "server_web",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": true,
+    "ios": false,
+    "external_public_api": false
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "webApp": ":app:webApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "No Compose in `:core`. `:app:shared` consumes these DTOs and `MuixerangaApi` in web feature slices.",
+  "out_of_scope": "- `:server` routes, Koin modules, and SQLDelight mappers.\n- `:app:shared` repositories, ViewModels, and Compose UI.\n- Android, desktop, and JS-only client tuning (v1 focuses on JVM server + `wasmJs` web).\n- Full `MuixerangaApi` resource methods for every SPEC-01..08 endpoint (each feature slice adds its own methods/extension group to `MuixerangaApi`).\n- Firebase types or OpenAPI generation.",
+  "external_systems": [],
+  "auth": {
+    "client": "DTOs: `GoogleAuthRequest`, `AuthTokenResponse`, `RefreshRequest`, `AuthConfigResponse`, `MeResponse` (self user + `permissions: List<String>`), `SessionSummary`.",
+    "server": "Reuses the exact same `:core` DTOs for JSON encode/decode."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §5 (v0.2 entities and §5.3 enums)",
+    "docs/especificacion-tecnica.md §6.1–6.8 (API shapes, §6.1.1 permissions)",
+    "docs/especificacion-tecnica.md §12.3 (Valencian labels)",
+    "docs/decisiones.md",
+    "specs/platform-schema-v02"
+  ],
+  "images": [],
+  "components": [
+    {
+      "name": "GreetingUtil",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/GreetingUtil.kt",
+      "decision": "modify",
+      "usage": "Delete placeholder hello utility so `:core` is contract-only.",
+      "notes": "Also clean any reference in `:server` or `:app:shared` once replaced.",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["server", "web"]
+    },
+    {
+      "name": "core/build.gradle.kts",
+      "location": "core/build.gradle.kts",
+      "decision": "modify",
+      "usage": "Add `kotlinx-serialization-json`, `kotlinx-datetime`, `ktor-client-core`, `ktor-client-content-negotiation`, `ktor-serialization-kotlinx-json` in `commonMain`.",
+      "notes": "Keep JVM + `wasmJs` targets green; match versions in `gradle/libs.versions.toml`.",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["server", "web"]
+    },
+    {
+      "name": "ApiPrimitives (ApiError, JsonConfig, MoneyCents, PatchField, Permissions)",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/api/",
+      "decision": "create",
+      "usage": "Extend `ApiErrorResponse` (from infra), define `ErrorCodes`, `TabalaJson`, `PagedResponse<T>`, `HealthResponse`, `MoneyCents`, `PatchField<T>`, `Permission` constants + `permissionsForRole(AccountRole)`.",
+      "notes": "Do not duplicate `ApiError.kt` if already created by `platform-server-infra`.",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["server", "web"]
+    },
+    {
+      "name": "Enums + EnumLabels",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/model/enums/",
+      "decision": "create",
+      "usage": "All 20 §5.3 enums (`MemberStatus` with `deleted` instead of `former`) plus `i18n/EnumLabels.kt` Valencian `labelCa()` extensions.",
+      "notes": "Include `ShirtSize.labelCa()` (XS..XXXL, Infantil 4..14) and `AreaKind.labelCa()` (Junta directiva / Àrea).",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["server", "web"]
+    },
+    {
+      "name": "Entity + Audience + Patch DTOs",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/model/",
+      "decision": "create",
+      "usage": "Full, Create, Patch (using `PatchField` + required `version`), and Public DTOs for User, Area, OrgRole, Event, Contract, InventoryItem, Group, Achievement, Figure, Position, PositionType, Document, Attendance.",
+      "notes": "Include `CreateEventFromContractRequest` (optional `date`/`endDate`/`allDay`) and `PutFigurePositionsRequest(version, positions)`.",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["server", "web"]
+    },
+    {
+      "name": "Validation",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/validation/",
+      "decision": "create",
+      "usage": "Pure Kotlin §6.4 validators: trim + max lengths, email lowercase, E.164 phone normalizer (accepts 9-digit ES in client helper), hex color `#RRGGBB`, minor guardian requirement, date ordering, position bounds `-20..20`/`0..8`, non-negative `MoneyCents`.",
+      "notes": "Returns `ValidationResult(errors: Map<String, String>)` matching §6.3 `fields`.",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["server", "web"]
+    },
+    {
+      "name": "MuixerangaApi",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/api/client/MuixerangaApi.kt",
+      "decision": "create",
+      "usage": "Ktor Client wrapper parameterized by `baseUrl`, `HttpClient`, and Bearer token provider. Implements `health()`, `authConfig()`, `authGoogle()`, `authRefresh()`, `authLogout()`, `authLogoutAll()`, `getMe()`, `patchMe()`, `getMeSessions()`, `deleteMeSession()`.",
+      "notes": "Feature slices add their resource endpoints as extension files or nested API groups without duplicating `HttpClient` setup.",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    }
+  ],
+  "structure": "Shared KMP contract consumed by both `:server` and `:app:shared`:\n\n```text\n:server      ──depends on──► :core (DTOs, enums, MoneyCents, PatchField, validators, Permission)\n:app:shared  ──depends on──► :core (DTOs, enums, i18n labels, validators, MuixerangaApi)\n```\n\nDTO naming convention:\n- `Foo`: full resource returned by authenticated GET (audience-specific variants where needed, e.g. `UserSelf`, `UserStaff`, `UserBoard`).\n- `FooPublic`: strictly filtered subset for `/api/v1/public/*`.\n- `FooCreate`: POST request body (no `id`, `version`, timestamps, or derived fields).\n- `FooPatch`: RFC 7386 Merge Patch body with required `version: Int` and `PatchField<T>` properties.\n- `PagedResponse<Foo>`: §6.2 pagination envelope (`items`, `page`, `perPage`, `totalItems`, `totalPages`).",
+  "sections": [
+    {
+      "title": "MoneyCents serialization (`decisiones.md`)",
+      "description": "Represent monetary amounts as `@Serializable(with = MoneyCentsSerializer::class) @JvmInline value class MoneyCents(val cents: Long)` instead of `Double`.",
+      "behavior": "Serializer emits an exact JSON number with 2 decimal digits via `JsonUnquotedLiteral` (e.g. `45000L` → `450.00`) and parses JSON numbers (`450`, `450.5`, `450.00`) strictly to integer cents (rejecting >2 decimal places or non-numeric strings with `SerializationException`). Reject negative values in validators."
+    },
+    {
+      "title": "PatchField<T> for RFC 7386 Merge Patch",
+      "description": "Every optional field in `*Patch` DTOs uses `PatchField<T>` defaulting to `PatchField.Absent`. Explicit JSON `null` deserializes to `PatchField.Null` (clear value); a non-null JSON value deserializes to `PatchField.Value(v)`.",
+      "behavior": "Custom serializer + `TabalaJson` omits `Absent` keys when encoding from client, writes explicit `null` for `PatchField.Null`, and writes the encoded value for `PatchField.Value`. On the server, services apply updates only for non-`Absent` fields, preventing accidental wipes."
+    },
+    {
+      "title": "Value types and permissions (§6.1.1)",
+      "description": "Include `FileRef(id, url, thumbUrl?, contentType, size)`, `GeoPoint(latitude, longitude)`, `PostalAddress`, `EmergencyContact`, `UserConsent`, `UserAccount`, `UserGuardian`, `OrgRoleSummary`, `UserPositionSummary`, `SocialLinks`, `ContractClient`, `ContractContact`, `ContractGrant`, `ContractBilling`, `InventoryVariant`, `AttendanceSummary`.",
+      "behavior": "Expose `Permission` string constants matching all 21 rows in §6.1.1 plus `permissionsForRole(role: AccountRole): Set<String>` so server (`GET /me`) and client navigation share a single source of truth."
+    },
+    {
+      "title": "Enum labels in Valencian (§12.3)",
+      "description": "Provide `labelCa(): String` for all 20 enums in §5.3.",
+      "behavior": "Match §12.3 verbatim, plus `MemberStatus.DELETED -> \"Eliminat\"`, `AreaKind.BOARD -> \"Junta directiva\"`, `AreaKind.AREA -> \"Àrea\"`, and `ShirtSize` (`XS`..`XXXL`, `Infantil 4`..`Infantil 14`)."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "Health (client DTO + call)",
+      "method": "GET",
+      "path": "/api/health",
+      "notes": "`HealthResponse(status, version, db)`.",
+      "implemented_on": "core-client",
+      "consumed_by": ["web"],
+      "auth": "none"
+    },
+    {
+      "name": "Auth config",
+      "method": "GET",
+      "path": "/api/v1/auth/config",
+      "notes": "`AuthConfigResponse(googleClientId)`.",
+      "implemented_on": "core-client",
+      "consumed_by": ["web"],
+      "auth": "none"
+    },
+    {
+      "name": "Google auth",
+      "method": "POST",
+      "path": "/api/v1/auth/google",
+      "notes": "`GoogleAuthRequest` → `AuthTokenResponse`.",
+      "implemented_on": "core-client",
+      "consumed_by": ["web"],
+      "auth": "none"
+    },
+    {
+      "name": "Refresh",
+      "method": "POST",
+      "path": "/api/v1/auth/refresh",
+      "notes": "Cookie (web) or `RefreshRequest` (native) → `AuthTokenResponse`.",
+      "implemented_on": "core-client",
+      "consumed_by": ["web"],
+      "auth": "refresh"
+    },
+    {
+      "name": "Logout / Logout all",
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "notes": "Also `POST /api/v1/auth/logout-all`.",
+      "implemented_on": "core-client",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Current user & sessions",
+      "method": "GET",
+      "path": "/api/v1/me",
+      "notes": "`MeResponse` + `PATCH /api/v1/me` + `GET/DELETE /api/v1/me/sessions`.",
+      "implemented_on": "core-client",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    }
+  ],
+  "persistence": "None in `:core`. Types mirror SQLite v0.2 semantics (`MoneyCents` maps 1:1 to `INTEGER` cents columns).",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": ":core Gradle + KMP dependencies",
+      "spec": "Add `kotlinx-serialization-json`, `kotlinx-datetime`, `ktor-client-core`, `ktor-client-content-negotiation`, `ktor-serialization-kotlinx-json` to `gradle/libs.versions.toml` and `core/build.gradle.kts` `commonMain`.",
+      "acceptance_criteria": [
+        "`./gradlew :core:compileKotlinJvm :core:compileKotlinWasmJs` succeeds",
+        "No dependency on `:server`, Compose, or Koin"
+      ],
+      "dependencies": [],
+      "components": ["core/build.gradle.kts"],
+      "target": "core",
+      "module": ":core",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T2",
+      "title": "API primitives, MoneyCents, PatchField, Permissions",
+      "spec": "Implement `TabalaJson`, `HealthResponse`, `PagedResponse<T>`, `ErrorCodes`, extend `ApiErrorResponse`, implement `MoneyCents` + custom serializer, `PatchField<T>` + custom serializer, and `Permission` + `permissionsForRole` matching §6.1.1.",
+      "acceptance_criteria": [
+        "`MoneyCents(45000)` serializes to `450.00` and parses `450`, `450.5`, `450.00` accurately",
+        "`PatchField` distinguishes omitted (`Absent`), explicit `null` (`Null`), and value (`Value`) in round-trip tests",
+        "`permissionsForRole` matches all 21 rows of §6.1.1"
+      ],
+      "dependencies": ["T1"],
+      "components": ["ApiPrimitives (ApiError, JsonConfig, MoneyCents, PatchField, Permissions)"],
+      "target": "core",
+      "module": ":core",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T3",
+      "title": "Enums §5.3 + Valencian i18n §12.3",
+      "spec": "Create all §5.3 `@Serializable` enums under `model/enums/` (with `MemberStatus.DELETED` replacing `former`, plus `PreferredLocale` (`ca`, `es`) and `MeetingFrequency` (`weekly`, `biweekly`, `monthly`, `as_needed`) per `decisiones.md`). Create `i18n/EnumLabels.kt` with `labelCa()` for every enum including `ShirtSize`, `AreaKind`, `PreferredLocale`, and `MeetingFrequency`.",
+      "acceptance_criteria": [
+        "Every §5.3 enum exists with `@SerialName` snake_case values tested",
+        "Every enum value has a non-blank `labelCa()` verified in `commonTest`"
+      ],
+      "dependencies": ["T1"],
+      "components": ["Enums + EnumLabels"],
+      "target": "core",
+      "module": ":core",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T4",
+      "title": "Nested value types",
+      "spec": "Create `FileRef`, `GeoPoint`, `PostalAddress`, `EmergencyContact`, `UserConsent`, `UserAccount`, `UserGuardian`, `OrgRoleSummary`, `UserPositionSummary`, `SocialLinks`, `ContractClient`, `ContractContact`, `ContractGrant`, `ContractBilling`, `InventoryVariant`, `AttendanceSummary`.",
+      "acceptance_criteria": [
+        "`FileRef` includes `id`, `url`, optional `thumbUrl`, `contentType`, `size`",
+        "Round-trip tests pass for all value types"
+      ],
+      "dependencies": ["T2", "T3"],
+      "components": ["Entity + Audience + Patch DTOs"],
+      "target": "core",
+      "module": ":core",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T5",
+      "title": "User + Organigrama DTOs",
+      "spec": "Create `User` (audience-aware DTOs: `UserBoard`, `UserStaff`, `UserSelf`, `UserPublic`; `UserSelf` & `UserBoard` include `preferredLocale`), `UserCreate`, `UserPatch`, `UserPatchMe` (incl. `preferredLocale`), `AccountCreate`, `AccountPatch`, `AnonymizeRequest`, `Area` (incl. optional `meetingFrequency`), `AreaPublic`, `AreaCreate`, `AreaPatch`, `OrgRole`, `OrgRolePublic`, `OrgRoleCreate`, `OrgRolePatch`, `OrgRoleHoldersUpdate`, `OrgChartResponse`, `PublicOrgChartResponse`.",
+      "acceptance_criteria": [
+        "No `boardRole` fields exist",
+        "All `*Patch` DTOs require `version: Int` and use `PatchField<T>`",
+        "`UserSelf` includes `emergencyContact`, `isMinor`, `notes`, and `guardians`"
+      ],
+      "dependencies": ["T4"],
+      "components": ["Entity + Audience + Patch DTOs"],
+      "target": "core",
+      "module": ":core",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T6",
+      "title": "Operational & repertoire DTOs",
+      "spec": "Create response/public/create/patch DTOs for `Event`, `Contract` (incl. `ContractSummary`, `CreateEventFromContractRequest`), `InventoryItem` (incl. supplier reorder fields `supplierContact`, `supplierReference`, `minOrderQty`, `leadTime`, `lastOrderedAt`, sales counters `unitsSold`, `revenue` (`MoneyCents`), `InventoryAdjustRequest`, `InventorySellRequest`, `InventorySummary`), `Group`, `Achievement`, `Figure`, `Position`, `PutFigurePositionsRequest(version, positions)`, `PositionType`, `Document`, `Attendance`.",
+      "acceptance_criteria": [
+        "All money fields use `MoneyCents`",
+        "All `*Patch` DTOs and `PutFigurePositionsRequest` require `version: Int`"
+      ],
+      "dependencies": ["T4"],
+      "components": ["Entity + Audience + Patch DTOs"],
+      "target": "core",
+      "module": ":core",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T7",
+      "title": "Auth & Me DTOs",
+      "spec": "Create `GoogleAuthRequest`, `AuthClientType` (`web`/`native`), `AuthTokenResponse`, `RefreshRequest`, `AuthConfigResponse`, `MeResponse`, `SessionSummary`.",
+      "acceptance_criteria": [
+        "`MeResponse` carries `UserSelf` + `permissions: List<String>`",
+        "`AuthTokenResponse` supports nullable `refreshToken` (omitted in web cookie mode)"
+      ],
+      "dependencies": ["T2", "T5"],
+      "components": ["Entity + Audience + Patch DTOs"],
+      "target": "core",
+      "module": ":core",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T8",
+      "title": "Shared validation package",
+      "spec": "Implement pure Kotlin validators under `validation/`: text trim + max lengths (§5), email lowercase + format, E.164 phone validator + ES 9-digit helper, `#RRGGBB` hex color, `UserValidator` (minor requires ≥1 guardian, `heightCm` 50..250), `EventValidator` (`endDate >= date`), `ContractValidator` (`discardReason` when `discarded`), `InventoryValidator` (≥1 variant, unique labels, qty/minStock ≥ 0), `FigureValidator` (`x,y` in `-20..20`, `z` in `0..8`, unique coords, unique user per figure).",
+      "acceptance_criteria": [
+        "`commonTest` verifies minor without guardians fails with `fields[\"guardians\"]`",
+        "`commonTest` verifies position bounds/duplicates and `MoneyCents` non-negative rules"
+      ],
+      "dependencies": ["T5", "T6"],
+      "components": ["Validation"],
+      "target": "core",
+      "module": ":core",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T9",
+      "title": "MuixerangaApi skeleton",
+      "spec": "Create `api/client/MuixerangaApi.kt` with `baseUrl`, injected `HttpClient` (configured with `TabalaJson` ContentNegotiation), and `ApiClientException(status, ApiErrorResponse)`. Implement `health()`, `authConfig()`, `authGoogle()`, `authRefresh()`, `authLogout()`, `authLogoutAll()`, `getMe()`, `patchMe()`, `getMeSessions()`, `deleteMeSession()`.",
+      "acceptance_criteria": [
+        "Compiles on JVM and `wasmJs`",
+        "Unit test with Ktor `MockEngine` verifies error envelope decoding into `ApiClientException`"
+      ],
+      "dependencies": ["T2", "T7"],
+      "components": ["MuixerangaApi"],
+      "target": "core",
+      "module": ":core",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T10",
+      "title": "Cleanup GreetingUtil + round-trip tests",
+      "spec": "Remove `GreetingUtil.kt` (updating any scaffold reference if still present). Run `./gradlew :core:jvmTest :core:compileKotlinWasmJs`.",
+      "acceptance_criteria": [
+        "No `GreetingUtil` remains in `:core`",
+        "`./gradlew :core:jvmTest :core:compileKotlinWasmJs` green"
+      ],
+      "dependencies": ["T6", "T8", "T9"],
+      "components": ["GreetingUtil"],
+      "target": "core",
+      "module": ":core",
+      "clients_affected": ["server", "web"]
+    }
+  ]
+}

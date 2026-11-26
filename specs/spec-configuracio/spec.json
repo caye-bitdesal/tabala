@@ -1,0 +1,154 @@
+{
+  "feature_name": "Configuració colla & Logros (UI web)",
+  "feature_slug": "spec-configuracio",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala.feature.config",
+  "scaffold": "MainScaffold",
+  "summary": "Complete web UI for `/configuracio`: own colla editor (logo, photo, `#RRGGBB` clothing colors, `GeoPoint`, website, social links), guest colles CRUD (`board`/`admin`), and **Achievements (Fites / Logros)** CRUD accessible to **`technical`, `board`, and `admin`**. **Web only** (consumes backend from `spec-groups-achievements`).",
+  "overview": "Fase 3 web UI slice implementing the `/configuracio` section on top of the complete `groups` and `achievements` backend built in `spec-groups-achievements`.\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §4.4, §5.9, §6.1.1, §7.4 (Configuració) · `docs/decisiones.md`.\n\n**Prerequisites**\n- `spec-groups-achievements` (all `/api/v1/groups*`, `/api/v1/achievements*`, and `:core` `MuixerangaApi` extensions).\n- `platform-web-shell` (`/configuracio` route gated by `config:write || achievements:write`).\n- `spec-03-calendar` (optional event picker when linking an achievement to an event).\n\n**Role-aware UI rules (`decisiones.md`)**\n- **`board` / `admin`** (`config:write` + `groups:write` + `achievements:write`): sees all 3 subsections inside `/configuracio` — **La nostra colla** (edit own group), **Altres colles** (guest colles CRUD), and **Fites / Logros** (achievements CRUD).\n- **`technical`** (`achievements:write`, without `groups:write`/`config:write`): enters `/configuracio` from the navigation bar, sees **Fites / Logros** with full create/edit/delete/logo actions, and either sees colla info in read-only mode or defaults directly to the Fites tab (no group write controls rendered).\n- **`member`**: `/configuracio` is hidden from navigation and blocked by route guard.\n\n**Acceptance (slice)**\n- `./gradlew :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes.\n- `board`/`admin` can edit own colla (`name`, `subtitle`, `foundation`, `history`, `contact`, `location`, `#RRGGBB` swatches for `faixa`/`shirt`/`trousers`, `website`, `socialLinks`, logo & image upload/delete) and manage guest colles (cannot delete own colla).\n- `technical`, `board`, and `admin` can create, edit, delete, and upload logos for achievements (with optional `groupId` and `eventId` links).\n- Client-side validation rejects invalid `#RRGGBB` hex colors before submitting and handles `409 version_conflict` with reload prompt.",
+  "client_scope": {
+    "preset": "web_only",
+    "server": false,
+    "android": false,
+    "desktop": false,
+    "web": true,
+    "ios": false,
+    "external_public_api": false
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "webApp": ":app:webApp",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "All screens, ViewModels, and repositories live in `:app:shared` `commonMain`. `:app:webApp` hosts wasm only. Zero `:server` changes in this slice (`decisiones.md`). Android/desktop/JS out of v1 scope.",
+  "out_of_scope": "- `:server` endpoints (completed in `spec-groups-achievements`).\n- Global app theme editing (colla colors in `TabalaTheme` are static brand tokens).\n- Astro CMS controls.\n- Android, desktop, JS, iOS clients.",
+  "external_systems": [],
+  "auth": {
+    "client": "Bearer JWT via `SessionManager`. Route `/configuracio` accessible when `config:write` OR `achievements:write` is present; group edit actions gated on `groups:write`, achievement edit actions gated on `achievements:write`.",
+    "server": "Consumed only (`spec-groups-achievements`)."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §5.9, §6.1.1, §7.4 (Configuració)",
+    "docs/decisiones.md",
+    "specs/spec-groups-achievements"
+  ],
+  "images": [],
+  "components": [
+    {
+      "name": "ConfigRepository",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/config/ConfigRepository.kt",
+      "decision": "create",
+      "usage": "Wraps `MuixerangaApi` groups & achievements methods (including logo/image multipart upload & delete) and optional events lookup for achievement linking.",
+      "notes": "Wired in Koin `SharedModules`.",
+      "layer": "repository",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "ConfigViewModel",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/config/ConfigViewModel.kt",
+      "decision": "create",
+      "usage": "Exposes `StateFlow<ConfigUiState>` managing active tab (`La nostra colla`, `Altres colles`, `Fites`), role capability flags (`canEditGroups`, `canEditAchievements`), client-side `#RRGGBB` / URL validation, media uploads, and `409` conflict reload.",
+      "notes": "Defaults initial tab to `Fites` when `!canEditGroups && canEditAchievements` (`technical`).",
+      "layer": "viewmodel",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "ConfiguracioScreen + GroupFormDialog + AchievementFormDialog",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/config/",
+      "decision": "create",
+      "usage": "Route `/configuracio`: `KpiFilterStrip` (colles, fites), tabbed layout (`La nostra colla`, `Altres colles`, `Fites`), hex color swatch list editor (`faixa`, `shirt`, `trousers`), logo/image upload & remove controls, `GeoPoint` coordinates input, `socialLinks` form, guest colles list (own group delete disabled), and achievements list + create/edit/delete dialog with optional `groupId` & `eventId` selectors.",
+      "notes": "",
+      "layer": "ui",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    }
+  ],
+  "structure": "Web-only feature slice:\n\n```text\nWeb /configuracio (ConfiguracioScreen)\n  ├─ Tab 1: La nostra colla  (editable by board/admin; read-only or hidden for technical)\n  ├─ Tab 2: Altres colles    (CRUD by board/admin)\n  └─ Tab 3: Fites / Logros   (CRUD by technical, board, admin)\n        ↓\nConfigViewModel → ConfigRepository → :core MuixerangaApi (spec-groups-achievements)\n```",
+  "sections": [
+    {
+      "title": "Hex color swatch editor (`faixa`, `shirt`, `trousers`)",
+      "description": "Reusable Compose component showing visual color chips for each `#RRGGBB` entry with add/remove controls and instant validation against `:core` hex validator.",
+      "behavior": "Validates `#RRGGBB` format on input and normalizes uppercase hex before sending `PatchField` updates."
+    },
+    {
+      "title": "Role-based tabs (`technical` vs `board`/`admin`)",
+      "description": "`ConfigViewModel` derives `canEditGroups = Permission.GROUPS_WRITE in permissions` and `canEditAchievements = Permission.ACHIEVEMENTS_WRITE in permissions`.",
+      "behavior": "For `technical` (`canEditAchievements && !canEditGroups`), opens directly on `Fites` and hides all group create/edit/delete/upload actions. For `board`/`admin`, opens on `La nostra colla` with full access to all 3 tabs."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "Groups CRUD & media (consumed)",
+      "method": "GET",
+      "path": "/api/v1/groups",
+      "notes": "Consumes `GET/POST/PATCH/DELETE /api/v1/groups*` and `PUT/DELETE .../logo|image` implemented in `spec-groups-achievements`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Achievements CRUD & logo (consumed)",
+      "method": "GET",
+      "path": "/api/v1/achievements",
+      "notes": "Consumes `GET/POST/PATCH/DELETE /api/v1/achievements*` and `PUT/DELETE .../logo` implemented in `spec-groups-achievements`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    }
+  ],
+  "persistence": "No client persistence; all mutations hit `:server` APIs from `spec-groups-achievements`.",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "ConfigRepository + ConfigViewModel",
+      "spec": "Create `ConfigRepository` (wired in Koin) and `ConfigViewModel` managing the 3 tabs, role flags (`technical` defaults to `Fites` with no group write actions), `#RRGGBB` color list validation, logo/image uploads, and `409 version_conflict` reload.",
+      "acceptance_criteria": [
+        "`jvmTest` verifies `technical` defaults to `Fites` with `canEditGroups=false, canEditAchievements=true`",
+        "`jvmTest` verifies invalid hex color blocks submit and surfaces field error",
+        "`jvmTest` verifies `board` can save own group and create/delete guest groups"
+      ],
+      "dependencies": [],
+      "components": ["ConfigRepository", "ConfigViewModel"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T2",
+      "title": "ConfiguracioScreen (own colla + guest colles + color swatches)",
+      "spec": "Implement `ConfiguracioScreen` and `GroupFormDialog` in Valencian Material 3: `KpiFilterStrip`, own colla form (logo, photo, `#RRGGBB` swatch lists for `faixa`/`shirt`/`trousers`, `GeoPoint`, `website`, `socialLinks`, history) and guest colles CRUD table/cards.",
+      "acceptance_criteria": [
+        "Own group delete button is never rendered",
+        "Logo & image upload/delete work via file picker and update previews"
+      ],
+      "dependencies": ["T1"],
+      "components": ["ConfiguracioScreen + GroupFormDialog + AchievementFormDialog"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T3",
+      "title": "Achievements subsection + AppNavigation wiring",
+      "spec": "Implement `Fites` tab and `AchievementFormDialog` (title, subtitle, year, optional `groupId` & `eventId` selectors, logo upload/delete) and replace the `/configuracio` placeholder in `AppNavigation`.",
+      "acceptance_criteria": [
+        "`./gradlew :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes",
+        "`technical`, `board`, and `admin` can manage achievements from `/configuracio`"
+      ],
+      "dependencies": ["T2"],
+      "components": ["ConfiguracioScreen + GroupFormDialog + AchievementFormDialog"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    }
+  ]
+}

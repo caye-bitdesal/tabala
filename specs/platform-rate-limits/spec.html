@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Platform rate limiting (§6.10)</title>
+<style>
+:root {
+  --bg: #0f1221; --panel: #181c2e; --panel-2: #1f2438; --text: #e7e9f3;
+  --muted: #9aa3c0; --accent: #6c8cff; --border: #2a3050; --code: #11152a;
+  --ok: #43c59e; --warn: #f5a623; --off: #4a5168;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+}
+.wrap { max-width: 960px; margin: 0 auto; padding: 40px 24px 80px; }
+header.spec-header { border-bottom: 1px solid var(--border); padding-bottom: 24px; margin-bottom: 32px; }
+header.spec-header h1 { margin: 0 0 8px; font-size: 34px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.chip {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
+  padding: 4px 12px; border-radius: 999px; font-size: 13px;
+}
+.chip strong { color: var(--text); }
+.chip.on { border-color: var(--ok); color: var(--ok); }
+.chip.off { opacity: .55; }
+section.block { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; margin: 18px 0; }
+section.block > h2 { margin-top: 0; font-size: 21px; border-left: 3px solid var(--accent); padding-left: 10px; }
+h3 { font-size: 17px; }
+h4 { font-size: 15px; color: var(--muted); }
+p { margin: 8px 0; }
+a { color: var(--accent); }
+code { background: var(--code); padding: 1px 6px; border-radius: 6px; font-size: 90%; }
+pre { background: var(--code); padding: 14px 16px; border-radius: 10px; overflow-x: auto; border: 1px solid var(--border); }
+pre code { background: none; padding: 0; }
+ul, ol { padding-left: 22px; }
+.images { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+figure { margin: 0; background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px; }
+figure img { width: 100%; height: auto; border-radius: 8px; display: block; }
+figcaption { color: var(--muted); font-size: 13px; margin-top: 8px; text-align: center; }
+.kind-tag { display: inline-block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  background: var(--accent); color: #0b0e1c; border-radius: 6px; padding: 1px 7px; margin-bottom: 6px; font-weight: 700; }
+.missing { color: var(--warn); font-style: italic; }
+table { width: 100%; border-collapse: collapse; margin: 6px 0; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 13px; }
+.subsection { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin: 12px 0; background: var(--panel-2); }
+.task { border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin: 14px 0; background: var(--panel-2); }
+.task-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.task-id { background: var(--accent); color: #0b0e1c; font-weight: 700; border-radius: 6px; padding: 1px 9px; font-size: 13px; }
+.task-deps { color: var(--muted); font-size: 13px; }
+.ac { margin-top: 8px; }
+.ac li { margin: 2px 0; }
+.uses { margin-top: 8px; color: var(--muted); font-size: 13px; }
+.uses .comp { color: var(--text); background: var(--code); border: 1px solid var(--border);
+  border-radius: 6px; padding: 1px 7px; margin: 0 2px; font-size: 12px; }
+.badge { display: inline-block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  font-weight: 700; border-radius: 6px; padding: 1px 8px; }
+.badge.reuse { background: var(--ok); color: #08130f; }
+.badge.modify { background: var(--warn); color: #1c1404; }
+.badge.create { background: var(--accent); color: #0b0e1c; }
+footer { color: var(--muted); font-size: 13px; margin-top: 32px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="spec-header">
+<h1>Platform rate limiting (§6.10)</h1>
+<p>Unified in-memory rate-limiting plugin on <code>:server</code> covering all 5 scopes of §6.10 (<code>/public/*</code>, authenticated private routes, <code>/auth/google</code>, <code>/auth/refresh</code>, and file uploads) with bounded memory (<code>-Xmx256m</code>), trusted <code>127.0.0.1</code> <code>X-Forwarded-For</code> IP resolution, and <code>429 rate_limited</code> + <code>Retry-After</code>. <strong>Server only</strong>.</p>
+<div class="meta"><span class="chip"><strong>Profile</strong> tabala</span><span class="chip"><strong>Package</strong> com.bitdesal.tabala</span><span class="chip"><strong>Tasks</strong> 2</span><span class="chip"><strong>Components</strong> 3</span></div>
+</header>
+<section class="block"><h2>Client Scope</h2><div class="meta"><span class="chip"><strong>Preset</strong> server_only</span><span class="chip on"><strong>server</strong> yes</span><span class="chip off"><strong>android</strong> no</span><span class="chip off"><strong>desktop</strong> no</span><span class="chip off"><strong>web</strong> no</span><span class="chip off"><strong>ios</strong> no</span><span class="chip off"><strong>external public API</strong> no</span></div></section>
+<section class="block"><h2>Overview</h2><p>Unifies and completes request throttling across the entire API so a single consistent mechanism protects auth, public routes, private routes, and heavy multipart uploads without external Redis.</p>
+<p><strong>Source of truth:</strong> <code>docs/especificacion-tecnica.md</code> v1.3 §6.3, §6.10, §8 (NFR-01 <code>-Xmx256m</code>).</p>
+<p><strong>Prerequisites</strong></p>
+<ul><li><code>platform-server-infra</code> (<code>TrustedProxy.resolvedClientIp()</code>, <code>ErrorHandling</code> <code>ApiErrorResponse</code>).</li><li><code>platform-server-auth</code> (<code>AuthPrincipal.userId</code> + existing auth limits to unify under this plugin).</li></ul>
+<p><strong>Scopes (§6.10)</strong></p>
+<ul><li><code>public</code> (<code>/api/v1/public/*</code> + anonymous <code>/api/v1/files/*</code>): <strong>120 req / min</strong> per client IP.</li><li><code>private</code> (authenticated <code>/api/v1/*</code> routes): <strong>300 req / min</strong> per <code>userId</code>.</li><li><code>auth-google</code> (<code>POST /api/v1/auth/google</code>): <strong>20 req / 15 min</strong> per client IP.</li><li><code>auth-refresh</code> (<code>POST /api/v1/auth/refresh</code>): <strong>60 req / min</strong> per client IP.</li><li><code>upload</code> (multipart file upload routes: avatars, event image/gallery, inventory/group/achievement/figure images, <code>POST /documents</code>): <strong>30 req / min</strong> per <code>userId</code>.</li></ul>
+<p><strong>Memory &amp; testability rules</strong></p>
+<ul><li>Bounded bucket map (max 10 000 entries per scope with periodic stale-entry eviction every 5 min) so IP-flood traffic cannot exhaust <code>-Xmx256m</code> heap.</li><li>Inject <code>Clock</code> / <code>TimeSource</code> and <code>rateLimitingEnabled: Boolean</code> in <code>EnvConfig</code> (default <code>true</code>; tests can toggle or inject a fake clock for deterministic assertions without <code>delay()</code>).</li><li>On limit exceeded: respond <code>429 Too Many Requests</code> with <code>Retry-After: &lt;seconds&gt;</code> header and §6.3 JSON body <code>{&quot;error&quot;:{&quot;code&quot;:&quot;rate_limited&quot;,&quot;message&quot;:&quot;Massa peticions. Torna-ho a provar en uns segons.&quot;}}</code>.</li></ul>
+<p><strong>Acceptance (slice)</strong></p>
+<ul><li><code>./gradlew :server:test</code> passes.</li><li>Deterministic tests with fake clock verify exact thresholds for all 5 scopes, <code>429 rate_limited</code> JSON body, <code>Retry-After</code> header, and window reset.</li><li>Spoofed <code>X-Forwarded-For</code> from a non-loopback peer does not bypass IP limits.</li><li>Auth routes reuse this unified plugin instead of duplicate ad-hoc counters.</li></ul></section>
+<section class="block"><h2>Modules</h2><table><thead><tr><th>Role</th><th>Gradle module</th></tr></thead><tbody><tr><td>core</td><td><code>:core</code></td></tr><tr><td>server</td><td><code>:server</code></td></tr><tr><td>shared</td><td><code>:app:shared</code></td></tr><tr><td>androidApp</td><td><code>:app:androidApp</code></td></tr><tr><td>desktopApp</td><td><code>:app:desktopApp</code></td></tr><tr><td>webApp</td><td><code>:app:webApp</code></td></tr><tr><td>iosApp</td><td><code>None</code></td></tr></tbody></table></section>
+<section class="block"><h2>Shared UI policy</h2><p>No UI in this slice. Server-only middleware.</p></section>
+<section class="block"><h2>Out of scope</h2><ul><li>Distributed Redis / multi-node rate limiting (single VPS process per §2).</li><li>UI error handling (already covered by <code>ApiErrorResponse</code> message rendering in <code>platform-web-shell</code>).</li><li>Android, desktop, JS, iOS clients.</li></ul></section>
+<section class="block"><h2>Auth</h2><table><thead><tr><th>Side</th><th>Rule</th></tr></thead><tbody><tr><td>client</td><td>N/A.</td></tr><tr><td>server</td><td>IP-keyed scopes (`public`, `auth-google`, `auth-refresh`) run before authentication using `TrustedProxy.resolvedClientIp()`; user-keyed scopes (`private`, `upload`) run after JWT authentication using `AuthPrincipal.userId`.</td></tr></tbody></table></section>
+<section class="block"><h2>Data Model Refs</h2><ul><li><code>docs/especificacion-tecnica.md §6.3</code></li><li><code>docs/especificacion-tecnica.md §6.10</code></li><li><code>docs/especificacion-tecnica.md §8 (NFR-01)</code></li></ul></section>
+<section class="block"><h2>Structure</h2><p>Route scoping for all 5 §6.10 buckets:</p>
+<pre><code>/api/health                  → exempt
+/api/v1/openapi.yaml, /docs  → public scope (120/min/IP)
+/api/v1/public/*             → public scope (120/min/IP)
+/api/v1/auth/google          → auth-google scope (20/15min/IP)
+/api/v1/auth/refresh         → auth-refresh scope (60/min/IP)
+/api/v1/* (authenticated)    → private scope (300/min/userId)
+  └─ multipart upload routes → also upload scope (30/min/userId)</code></pre></section>
+<section class="block"><h2>Components</h2><table><thead><tr><th>Component</th><th>Decision</th><th>Layer</th><th>Module</th><th>Source set</th><th>Location</th><th>Used for</th><th>Clients</th><th>Notes</th></tr></thead><tbody><tr><td><code>TokenBucketStore</code></td><td><span class="badge create">CREATE</span></td><td>server</td><td><code>:server</code></td><td><code>main</code></td><td><code>server/src/main/kotlin/com/bitdesal/tabala/http/TokenBucketStore.kt</code></td><td>Thread-safe sliding-window / token-bucket limiter with injectable `TimeSource`, hard cap of 10 000 keys per scope, and stale-bucket eviction to keep memory bounded under `-Xmx256m`.</td><td>server</td><td>Returns `Allowed` or `Rejected(retryAfterSeconds: Long)`.</td></tr><tr><td><code>RateLimitPlugin</code></td><td><span class="badge create">CREATE</span></td><td>server</td><td><code>:server</code></td><td><code>main</code></td><td><code>server/src/main/kotlin/com/bitdesal/tabala/http/RateLimitPlugin.kt</code></td><td>Route-scoped Ktor plugin `withRateLimit(RateLimitScope)` resolving key by IP (`TrustedProxy`) or `AuthPrincipal.userId` and responding `429 rate_limited` + `Retry-After`.</td><td>server</td><td>Replaces any temporary auth-only limiter from `platform-server-auth`.</td></tr><tr><td><code>Application.module &amp; AuthRoutes</code></td><td><span class="badge modify">MODIFY</span></td><td>server</td><td><code>:server</code></td><td><code>main</code></td><td><code>server/src/main/kotlin/com/bitdesal/tabala/Application.kt</code></td><td>Register `TokenBucketStore` in Koin, schedule eviction coroutine, and wrap `/api/v1/public/*`, authenticated `/api/v1/*`, `/auth/google`, `/auth/refresh`, and upload routes with `withRateLimit(...)`.</td><td>server</td><td></td></tr></tbody></table></section>
+<section class="block"><h2>Sections</h2><div class="subsection"><h3>Trusted client IP resolution</h3><h4>Contents</h4><p>Always derive IP keys via <code>TrustedProxy.resolvedClientIp()</code> from <code>platform-server-infra</code>.</p><h4>Behavior</h4><p>When the direct TCP peer is <code>127.0.0.1</code> (Caddy), use the right-most untrusted <code>X-Forwarded-For</code> IP; otherwise ignore <code>X-Forwarded-For</code> completely and use the socket remote address.</p></div><div class="subsection"><h3>Bounded memory &amp; test isolation</h3><h4>Contents</h4><p>Each scope caps active keys at 10 000 and evicts idle buckets periodically (every 5 minutes).</p><h4>Behavior</h4><p>Provide a test constructor / <code>EnvConfig</code> switch so unrelated integration tests are not affected by rate limits while dedicated <code>RateLimitTest</code> tests exercise every threshold deterministically with a fake clock.</p></div></section>
+<section class="block"><h2>Persistence</h2><p>In-memory only (no SQLite writes for rate limiting).</p></section>
+<section class="block"><h2>Incremental Tasks</h2><div class="task"><div class="task-head"><span class="task-id">T1</span><h3>Implement bounded TokenBucketStore</h3><span class="task-deps">no dependencies</span></div><p class="uses">target: server · module: :server · clients: server</p><p>Create <code>TokenBucketStore</code> with injectable clock, 5 <code>RateLimitScope</code> definitions matching §6.10, <code>retryAfterSeconds</code> calculation, 10 000 key cap, and eviction helper.</p><p class="uses">Components: <span class="comp">TokenBucketStore</span></p><div class="ac"><h4>Acceptance criteria</h4><ul><li>Unit tests verify exact allow/reject counts and <code>Retry-After</code> reset for all 5 scopes using a fake clock</li><li>Eviction keeps map size bounded under synthetic unique-IP flood</li></ul></div></div><div class="task"><div class="task-head"><span class="task-id">T2</span><h3>Implement RateLimitPlugin and unify across all scopes</h3><span class="task-deps">depends on: T1</span></div><p class="uses">target: server · module: :server · clients: server</p><p>Create route-scoped <code>RateLimitPlugin</code> emitting <code>429</code> + <code>Retry-After</code> + §6.3 <code>ApiErrorResponse(code = &quot;rate_limited&quot;)</code>. Replace ad-hoc auth counters in <code>AuthRoutes</code> and wire public, private, and upload scopes across routing.</p><p class="uses">Components: <span class="comp">RateLimitPlugin</span><span class="comp">Application.module &amp; AuthRoutes</span></p><div class="ac"><h4>Acceptance criteria</h4><ul><li><code>:server:test</code> verifies 121st <code>/public/*</code> request returns <code>429</code> with <code>Retry-After</code> and JSON <code>code = &quot;rate_limited&quot;</code></li><li><code>:server:test</code> verifies 31st upload request for same user returns <code>429</code></li><li><code>:server:test</code> verifies spoofed <code>X-Forwarded-For</code> from non-loopback peer cannot bypass IP limit</li></ul></div></div></section>
+<footer>Generated by bitdesal-create-kmp-spec.</footer>
+</div>
+</body>
+</html>

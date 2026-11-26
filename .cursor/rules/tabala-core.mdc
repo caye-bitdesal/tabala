@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Core (`:core`)
 
-- Pure Kotlin multiplatform: `@Serializable` types, enums, validation helpers — **no** Compose, Koin, Ktor, or SQL.
-- Match `backend/data-model/data-model.json`: English fields, ISO 8601 dates, ID references, `GeoPoint`.
+- Pure Kotlin multiplatform: `@Serializable` v0.2 DTOs, enums, Valencian `enumLabels`, validation helpers, and `MuixerangaApi` (Ktor Client) — **no** Compose, Koin, Firebase, or SQL.
+- Match `docs/especificacion-tecnica.md` v1.3 (model v0.2) and `docs/decisiones.md`: English fields, ISO 8601 dates, `MoneyCents` (`Long` cents serialized as 2-dp JSON euros), `PatchField<T>` for RFC 7386 Merge Patch, `GeoPoint`, `FileRef`.
 - Computed fields documented in model KDoc (`isMinor` from `birthDate`, derived relation sides).
 - Keep modules free of Android/iOS-specific APIs; use expect/actual only when unavoidable and minimal.

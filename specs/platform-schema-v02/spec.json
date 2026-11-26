@@ -1,0 +1,195 @@
+{
+  "feature_name": "Platform schema v0.2 (SQLite)",
+  "feature_slug": "platform-schema-v02",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala",
+  "scaffold": "",
+  "summary": "Replace pre-production schema 0.1 with **modelo v0.2** on `:server`: SQLDelight `.sqm` → Flyway SQL, `OrgRole` + holders, Google OIDC/session tables, `stored_files`, `version` optimistic locking, strict position constraints, `MemberStatus.deleted`, and seeds §12.1–12.2. **Server only**.",
+  "overview": "Second platform slice after (or parallel to) `platform-server-infra`. Aligns SQLite with `docs/especificacion-tecnica.md` v1.3 §4.5, §5 (v0.2), §6.9 (`stored_files`), §12.1–12.2 (seed data), and `docs/decisiones.md`.\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 · `docs/decisiones.md`.\n\n**Migration policy (greenfield pre-production)**\n- No production data yet → **replace** `V1__initial_schema.sqm` (0.1) with the v0.2 baseline DDL plus `V2__seed.sqm`.\n- Once deployed to production, never edit applied migrations — add `V3__…` onwards.\n- Developers with an old local DB delete `DB_PATH` before starting the server (noted in `Database.kt` KDoc).\n- Pipeline: edit `.sqm` → `./gradlew :server:generateMainTabalaDatabaseMigrations` → Flyway applies generated `db/migration/*.sql` at runtime.\n\n**Key v0.2 + `decisiones.md` schema rules**\n- `users.status` CHECK: `('active', 'inactive', 'on_leave', 'deleted')` (`deleted` replaces `former`). `height_cm CHECK (height_cm BETWEEN 50 AND 250)`. Add `preferred_locale TEXT NOT NULL DEFAULT 'ca' CHECK (preferred_locale IN ('ca', 'es'))`. Drop `board_role`, `board_role_since`. Add `version`.\n- `areas`: add `kind ('board', 'area')` with unique partial index `WHERE kind = 'board'`; make `slug NOT NULL UNIQUE`; keep optional `meeting_frequency IN ('weekly', 'biweekly', 'monthly', 'as_needed')`; drop `goals`; add `version`.\n- `inventory_items`: add supplier reorder & sales columns (`supplier_contact TEXT`, `supplier_reference TEXT`, `min_order_qty INTEGER CHECK (min_order_qty >= 0)`, `lead_time TEXT`, `last_ordered_at TEXT`, `units_sold INTEGER NOT NULL DEFAULT 0 CHECK (units_sold >= 0)`, `revenue_cents INTEGER NOT NULL DEFAULT 0 CHECK (revenue_cents >= 0)`) and `version`.\n- Organigrama: add `org_roles` (`area_id REFERENCES areas(id) ON DELETE RESTRICT`, `UNIQUE(area_id, name)`, `version`) and `org_role_holders` (`PRIMARY KEY(org_role_id, user_id)`, FK `ON DELETE CASCADE`); drop `area_members`.\n- Auth (§4.5): `user_accounts` drops `auth_provider` and `auth_uid` (no Firebase); add `google_identities`, `sessions`, `refresh_tokens`. Invariant (`status != 'invited' => google_identities row exists`) enforced in `AccountLinkingService` transaction.\n- `events`: `category NOT NULL`, `status NOT NULL DEFAULT 'planned'`, `version`.\n- `figures` & `positions`: `figures.name UNIQUE`, `positions` adds `UNIQUE (figure_id, x, y, z)` and `CHECK (x BETWEEN -20 AND 20 AND y BETWEEN -20 AND 20 AND z BETWEEN 0 AND 8)`.\n- `stored_files` (§6.9): stores metadata + internal `storage_key` (random filename on disk) + optional `thumb_storage_key` (400 px thumbnail); domain media columns become `*_file_id REFERENCES stored_files(id) ON DELETE SET NULL` (and `documents.file_id NOT NULL REFERENCES stored_files(id) ON DELETE RESTRICT`, `event_gallery.file_id NOT NULL REFERENCES stored_files(id) ON DELETE RESTRICT`).\n- `version INTEGER NOT NULL DEFAULT 1` on all mutable entity tables updated via PATCH/PUT: `groups`, `users`, `areas`, `org_roles`, `events`, `contracts`, `inventory_items`, `achievements`, `figures`, `position_types`, `documents`.\n\n**Acceptance (slice)**\n- `./gradlew :server:test` green.\n- Fresh DB has Flyway versions **1** (DDL) + **2** (seed).\n- Counts: `areas = 8` (1 `board` + 7 `area`), `org_roles = 40`, `position_types = 10`, `groups` with `is_own = 1` = 1 («Muixeranga d'Elx»).\n- `google_identities`, `sessions`, `refresh_tokens`, `stored_files` exist.\n- No `area_members`, no `board_role*`, no Firebase columns.\n- Constraint tests verify `positions` coordinate bounds/uniqueness, single `board` area, `org_roles` `ON DELETE RESTRICT`, `users.status = 'deleted'`, `users.preferred_locale`, and `inventory_items` sales/reorder columns.",
+  "client_scope": {
+    "preset": "server_only",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": false,
+    "ios": false,
+    "external_public_api": false
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "webApp": ":app:webApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "No UI and no `:core` DTOs in this slice (`platform-core-contract`).",
+  "out_of_scope": "- Ktor routes, repositories, and feature `.sq` query files (added in auth and feature slices).\n- `:core` DTOs and enums.\n- Auth business logic (`platform-server-auth`) and file upload/download handlers (`platform-files`).\n- Real member PII or import scripts.\n- Migrating pre-existing v0.1 production databases (none exist).",
+  "external_systems": [],
+  "auth": {
+    "client": "N/A.",
+    "server": "DDL only for `user_accounts`, `google_identities`, `sessions`, and `refresh_tokens` per §4.5. No passwords or Firebase columns."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §4.5",
+    "docs/especificacion-tecnica.md §5.1–5.13 (v0.2)",
+    "docs/especificacion-tecnica.md §6.9 (stored_files)",
+    "docs/especificacion-tecnica.md §12.1–12.2 (seeds)",
+    "docs/decisiones.md"
+  ],
+  "images": [],
+  "components": [
+    {
+      "name": "V1__initial_schema.sqm",
+      "location": "server/src/main/sqldelight/migrations/V1__initial_schema.sqm",
+      "decision": "modify",
+      "usage": "Full SQLite v0.2 baseline DDL replacing 0.1.",
+      "notes": "Keep Flyway version 1; include storage conventions comment header.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "V2__seed.sqm",
+      "location": "server/src/main/sqldelight/migrations/V2__seed.sqm",
+      "decision": "create",
+      "usage": "§12.1 organigrama (8 areas, 40 org_roles with Legal extern/intern descriptions) + §12.2 own group + 10 position_types.",
+      "notes": "Use deterministic UUIDs for seeded areas, org_roles, and own group; readable ASCII slugs for position_types (`alcadors`, `terc`, etc.) matching V1.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "Database.kt",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/database/Database.kt",
+      "decision": "modify",
+      "usage": "Document pre-production local DB wipe note in KDoc.",
+      "notes": "Keep Flyway + WAL + FK behavior intact.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "DatabaseTest",
+      "location": "server/src/test/kotlin/com/bitdesal/tabala/database/DatabaseTest.kt",
+      "decision": "modify",
+      "usage": "Assert v0.2 migration versions (1 & 2), seed counts, auth/file tables, and all v0.2 constraints.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "test",
+      "clients": ["server"]
+    },
+    {
+      "name": "sqldelight TabalaDatabase",
+      "location": "server/build.gradle.kts",
+      "decision": "reuse",
+      "usage": "`deriveSchemaFromMigrations = true`, generates Flyway `.sql` files.",
+      "notes": "Run `:server:generateMainTabalaDatabaseMigrations` on `.sqm` changes.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    }
+  ],
+  "structure": "Server-only persistence pipeline:\n\n```text\nserver/src/main/sqldelight/migrations/V1__initial_schema.sqm + V2__seed.sqm\n  → ./gradlew :server:generateMainTabalaDatabaseMigrations\n  → build/generated/flyway/db/migration/V1__*.sql, V2__*.sql\n  → openDatabase() / Flyway.migrate()\n  → SQLite WAL (foreign_keys = ON, busy_timeout = 5000)\n```\n\nKey table groups in v0.2:\n- Identity & auth: `users`, `user_accounts`, `user_guardians`, `google_identities`, `sessions`, `refresh_tokens`\n- Organigrama: `areas`, `org_roles`, `org_role_holders`\n- Operations: `events`, `event_gallery`, `event_figures`, `event_groups`, `attendance`, `contracts`, `inventory_items`, `inventory_variants`\n- Colla & repertoire: `groups`, `achievements`, `figures`, `position_types`, `positions`, `documents`\n- Media metadata: `stored_files`",
+  "sections": [
+    {
+      "title": "stored_files table and media foreign keys (§6.9)",
+      "description": "`stored_files`: `id TEXT PK`, `owner_type TEXT NOT NULL`, `owner_id TEXT NOT NULL`, `field TEXT NOT NULL`, `original_name TEXT NOT NULL`, `storage_key TEXT NOT NULL UNIQUE`, `thumb_storage_key TEXT`, `content_type TEXT NOT NULL`, `size INTEGER NOT NULL CHECK (size >= 0)`, `protected INTEGER NOT NULL DEFAULT 1 CHECK (protected IN (0, 1))`, `created_at TEXT NOT NULL`.",
+      "behavior": "Media references across tables become `*_file_id REFERENCES stored_files(id)`: `users.avatar_file_id`, `groups.image_file_id`, `groups.logo_file_id`, `events.image_file_id`, `event_gallery.file_id`, `inventory_items.image_file_id`, `achievements.logo_file_id`, `figures.image_file_id`, `documents.file_id`. Index `stored_files(owner_type, owner_id)` for cleanup."
+    },
+    {
+      "title": "Optimistic locking (`version`) and child tables",
+      "description": "Add `version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1)` to every aggregate root updated via PATCH/PUT: `groups`, `users`, `areas`, `org_roles`, `events`, `contracts`, `inventory_items`, `achievements`, `figures`, `position_types`, `documents`.",
+      "behavior": "Child/join tables (`user_guardians`, `org_role_holders`, `event_gallery`, `event_figures`, `event_groups`, `inventory_variants`, `positions`) inherit versioning from their parent aggregate (for example `PUT /figures/{id}/positions` checks and increments `figures.version`). `attendance` is upserted per `(event_id, user_id)` and does not require client `version`."
+    },
+    {
+      "title": "Seed data (§12.1 and §12.2)",
+      "description": "Insert 8 `areas` (slugs: `junta`, `tecnica`, `xicalla`, `membres`, `marqueting`, `esdeveniments`, `relacions`, `material`), 40 `org_roles` with exact `is_lead` flags and descriptions for `Legal extern` and `Legal intern`, 1 own `groups` row («Muixeranga d'Elx», «Fem pinya com una tabala», `foundation = 2022`, `is_own = 1`), and 10 `position_types` with ASCII slugs (`mestre`, `bases`, `alcadors`, `contrafort`, `escala`, `mans`, `passador`, `segon`, `terc`, `xicalla`) and Valencian `name` labels.",
+      "behavior": "Use fixed deterministic UUIDs in `V2__seed.sqm` for areas, org_roles, and own group so tests and references remain reproducible across environments. Never insert `users` or `org_role_holders` in migrations."
+    },
+    {
+      "title": "Constraints updated from v0.1",
+      "description": "Fix v0.1 gaps discovered against §5: `users.status IN ('active','inactive','on_leave','deleted')`, `users.height_cm BETWEEN 50 AND 250`, `areas.slug NOT NULL UNIQUE`, `areas.kind IN ('board','area')` with unique partial index for `kind = 'board'`, `events.category NOT NULL`, `events.status NOT NULL DEFAULT 'planned'`, `figures.name NOT NULL UNIQUE`, `positions` `UNIQUE (figure_id, x, y, z)` and `CHECK (x BETWEEN -20 AND 20 AND y BETWEEN -20 AND 20 AND z BETWEEN 0 AND 8)`.",
+      "behavior": "Keep `documents.event_id REFERENCES events(id) ON DELETE RESTRICT` and `documents.user_id REFERENCES users(id) ON DELETE RESTRICT` so historical documents are never silently lost; `DELETE /users/{id}` and `anonymize` never physically delete the `users` row (only `admin` `?hard=true` fails with `409 in_use` if documents exist)."
+    }
+  ],
+  "endpoints": [],
+  "persistence": "SQLite on `:server` only. Two Flyway migrations (`V1` DDL + `V2` seed) generated from `.sqm`. WAL, `foreign_keys = ON`, and `busy_timeout = 5000` enforced via `DatabaseAccess`.",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Plan and verify v0.2 DDL checklist",
+      "spec": "Compare current `V1__initial_schema.sqm` against §5.1–§5.13, §4.5, §6.9, and `docs/decisiones.md`. Document the table list and storage conventions in the header comment of `V1__initial_schema.sqm`.",
+      "acceptance_criteria": [
+        "Every v0.2 change and `decisiones.md` adjustment is mapped to a table/column"
+      ],
+      "dependencies": [],
+      "components": ["V1__initial_schema.sqm"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T2",
+      "title": "Rewrite V1__initial_schema.sqm to v0.2 baseline",
+      "spec": "Replace 0.1 DDL with full v0.2 schema: updated `users` (`deleted` status, `height_cm` 50–250, `preferred_locale` default `'ca'`, no `board_role*`), `areas` (`kind`, `slug NOT NULL`, partial unique index for `board`, keep optional `meeting_frequency`, drop `goals`), `inventory_items` (add `supplier_contact`, `supplier_reference`, `min_order_qty`, `lead_time`, `last_ordered_at`, `units_sold`, `revenue_cents`), `events` (`category NOT NULL`, `status NOT NULL`), `figures` (`name UNIQUE`), `positions` (`UNIQUE(figure_id,x,y,z)`, `CHECK` bounds `-20..20`/`0..8`), `org_roles` (`ON DELETE RESTRICT`) + `org_role_holders`, auth tables (`user_accounts` without Firebase, `google_identities`, `sessions`, `refresh_tokens`), `stored_files` + `*_file_id` FKs across all media columns including `event_gallery` and `achievements`, and `version` columns. Remove `area_members` and the seed `INSERT INTO position_types` from V1 (moves to V2).",
+      "acceptance_criteria": [
+        "`./gradlew :server:generateMainTabalaDatabaseMigrations` succeeds",
+        "Generated `V1__initial_schema.sql` applies cleanly to an empty SQLite file",
+        "No Firebase columns (`auth_uid`, `auth_provider`) and no `area_members` table"
+      ],
+      "dependencies": ["T1"],
+      "components": ["V1__initial_schema.sqm"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T3",
+      "title": "Create V2__seed.sqm (§12.1 + §12.2)",
+      "spec": "Create `server/src/main/sqldelight/migrations/V2__seed.sqm` inserting the 8 areas, 40 org_roles (with `is_lead` and legal role descriptions), own group («Muixeranga d'Elx»), and 10 position_types using UTC ISO timestamps and deterministic IDs. Do not insert users or holders.",
+      "acceptance_criteria": [
+        "Migration applies cleanly after V1",
+        "Counts equal 8 areas, 40 org_roles, 10 position_types, 1 own group",
+        "`junta` has `kind = 'board'`; the other 7 have `kind = 'area'`"
+      ],
+      "dependencies": ["T2"],
+      "components": ["V2__seed.sqm"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T4",
+      "title": "Update DatabaseTest for v0.2 schema and constraints",
+      "spec": "Update `DatabaseTest.kt` to assert Flyway versions 1 and 2, exact seed counts, absence of `area_members`/`board_role`, presence of auth and `stored_files` tables, single `board` area constraint, `org_roles` `ON DELETE RESTRICT`, `positions` `(figure_id, x, y, z)` uniqueness and bounds CHECK, `users.status = 'deleted'`, and WAL + FK pragmas.",
+      "acceptance_criteria": [
+        "`./gradlew :server:test` passes"
+      ],
+      "dependencies": ["T3"],
+      "components": ["DatabaseTest", "Database.kt"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T5",
+      "title": "Sync docs/module-schema.md and README.md",
+      "spec": "Update `docs/module-schema.md` and `README.md` to reference schema v0.2 (V1 + V2 migrations), Google OIDC + own sessions (remove Firebase references), and `:core` including `MuixerangaApi`.",
+      "acceptance_criteria": [
+        "No stale Firebase or v0.1 references in `docs/module-schema.md` or `README.md`"
+      ],
+      "dependencies": ["T4"],
+      "components": [],
+      "target": "repo",
+      "module": "repo",
+      "clients_affected": ["server"]
+    }
+  ]
+}

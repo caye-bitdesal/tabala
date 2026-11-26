@@ -1,0 +1,121 @@
+{
+  "feature_name": "Platform rate limiting (§6.10)",
+  "feature_slug": "platform-rate-limits",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala",
+  "scaffold": "",
+  "summary": "Unified in-memory rate-limiting plugin on `:server` covering all 5 scopes of §6.10 (`/public/*`, authenticated private routes, `/auth/google`, `/auth/refresh`, and file uploads) with bounded memory (`-Xmx256m`), trusted `127.0.0.1` `X-Forwarded-For` IP resolution, and `429 rate_limited` + `Retry-After`. **Server only**.",
+  "overview": "Unifies and completes request throttling across the entire API so a single consistent mechanism protects auth, public routes, private routes, and heavy multipart uploads without external Redis.\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §6.3, §6.10, §8 (NFR-01 `-Xmx256m`).\n\n**Prerequisites**\n- `platform-server-infra` (`TrustedProxy.resolvedClientIp()`, `ErrorHandling` `ApiErrorResponse`).\n- `platform-server-auth` (`AuthPrincipal.userId` + existing auth limits to unify under this plugin).\n\n**Scopes (§6.10)**\n- `public` (`/api/v1/public/*` + anonymous `/api/v1/files/*`): **120 req / min** per client IP.\n- `private` (authenticated `/api/v1/*` routes): **300 req / min** per `userId`.\n- `auth-google` (`POST /api/v1/auth/google`): **20 req / 15 min** per client IP.\n- `auth-refresh` (`POST /api/v1/auth/refresh`): **60 req / min** per client IP.\n- `upload` (multipart file upload routes: avatars, event image/gallery, inventory/group/achievement/figure images, `POST /documents`): **30 req / min** per `userId`.\n\n**Memory & testability rules**\n- Bounded bucket map (max 10 000 entries per scope with periodic stale-entry eviction every 5 min) so IP-flood traffic cannot exhaust `-Xmx256m` heap.\n- Inject `Clock` / `TimeSource` and `rateLimitingEnabled: Boolean` in `EnvConfig` (default `true`; tests can toggle or inject a fake clock for deterministic assertions without `delay()`).\n- On limit exceeded: respond `429 Too Many Requests` with `Retry-After: <seconds>` header and §6.3 JSON body `{\"error\":{\"code\":\"rate_limited\",\"message\":\"Massa peticions. Torna-ho a provar en uns segons.\"}}`.\n\n**Acceptance (slice)**\n- `./gradlew :server:test` passes.\n- Deterministic tests with fake clock verify exact thresholds for all 5 scopes, `429 rate_limited` JSON body, `Retry-After` header, and window reset.\n- Spoofed `X-Forwarded-For` from a non-loopback peer does not bypass IP limits.\n- Auth routes reuse this unified plugin instead of duplicate ad-hoc counters.",
+  "client_scope": {
+    "preset": "server_only",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": false,
+    "ios": false,
+    "external_public_api": false
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "webApp": ":app:webApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "No UI in this slice. Server-only middleware.",
+  "out_of_scope": "- Distributed Redis / multi-node rate limiting (single VPS process per §2).\n- UI error handling (already covered by `ApiErrorResponse` message rendering in `platform-web-shell`).\n- Android, desktop, JS, iOS clients.",
+  "external_systems": [],
+  "auth": {
+    "client": "N/A.",
+    "server": "IP-keyed scopes (`public`, `auth-google`, `auth-refresh`) run before authentication using `TrustedProxy.resolvedClientIp()`; user-keyed scopes (`private`, `upload`) run after JWT authentication using `AuthPrincipal.userId`."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §6.3",
+    "docs/especificacion-tecnica.md §6.10",
+    "docs/especificacion-tecnica.md §8 (NFR-01)"
+  ],
+  "images": [],
+  "components": [
+    {
+      "name": "TokenBucketStore",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/http/TokenBucketStore.kt",
+      "decision": "create",
+      "usage": "Thread-safe sliding-window / token-bucket limiter with injectable `TimeSource`, hard cap of 10 000 keys per scope, and stale-bucket eviction to keep memory bounded under `-Xmx256m`.",
+      "notes": "Returns `Allowed` or `Rejected(retryAfterSeconds: Long)`.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "RateLimitPlugin",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/http/RateLimitPlugin.kt",
+      "decision": "create",
+      "usage": "Route-scoped Ktor plugin `withRateLimit(RateLimitScope)` resolving key by IP (`TrustedProxy`) or `AuthPrincipal.userId` and responding `429 rate_limited` + `Retry-After`.",
+      "notes": "Replaces any temporary auth-only limiter from `platform-server-auth`.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "Application.module & AuthRoutes",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/Application.kt",
+      "decision": "modify",
+      "usage": "Register `TokenBucketStore` in Koin, schedule eviction coroutine, and wrap `/api/v1/public/*`, authenticated `/api/v1/*`, `/auth/google`, `/auth/refresh`, and upload routes with `withRateLimit(...)`.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    }
+  ],
+  "structure": "Route scoping for all 5 §6.10 buckets:\n\n```text\n/api/health                  → exempt\n/api/v1/openapi.yaml, /docs  → public scope (120/min/IP)\n/api/v1/public/*             → public scope (120/min/IP)\n/api/v1/auth/google          → auth-google scope (20/15min/IP)\n/api/v1/auth/refresh         → auth-refresh scope (60/min/IP)\n/api/v1/* (authenticated)    → private scope (300/min/userId)\n  └─ multipart upload routes → also upload scope (30/min/userId)\n```",
+  "sections": [
+    {
+      "title": "Trusted client IP resolution",
+      "description": "Always derive IP keys via `TrustedProxy.resolvedClientIp()` from `platform-server-infra`.",
+      "behavior": "When the direct TCP peer is `127.0.0.1` (Caddy), use the right-most untrusted `X-Forwarded-For` IP; otherwise ignore `X-Forwarded-For` completely and use the socket remote address."
+    },
+    {
+      "title": "Bounded memory & test isolation",
+      "description": "Each scope caps active keys at 10 000 and evicts idle buckets periodically (every 5 minutes).",
+      "behavior": "Provide a test constructor / `EnvConfig` switch so unrelated integration tests are not affected by rate limits while dedicated `RateLimitTest` tests exercise every threshold deterministically with a fake clock."
+    }
+  ],
+  "endpoints": [],
+  "persistence": "In-memory only (no SQLite writes for rate limiting).",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Implement bounded TokenBucketStore",
+      "spec": "Create `TokenBucketStore` with injectable clock, 5 `RateLimitScope` definitions matching §6.10, `retryAfterSeconds` calculation, 10 000 key cap, and eviction helper.",
+      "acceptance_criteria": [
+        "Unit tests verify exact allow/reject counts and `Retry-After` reset for all 5 scopes using a fake clock",
+        "Eviction keeps map size bounded under synthetic unique-IP flood"
+      ],
+      "dependencies": [],
+      "components": ["TokenBucketStore"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T2",
+      "title": "Implement RateLimitPlugin and unify across all scopes",
+      "spec": "Create route-scoped `RateLimitPlugin` emitting `429` + `Retry-After` + §6.3 `ApiErrorResponse(code = \"rate_limited\")`. Replace ad-hoc auth counters in `AuthRoutes` and wire public, private, and upload scopes across routing.",
+      "acceptance_criteria": [
+        "`:server:test` verifies 121st `/public/*` request returns `429` with `Retry-After` and JSON `code = \"rate_limited\"`",
+        "`:server:test` verifies 31st upload request for same user returns `429`",
+        "`:server:test` verifies spoofed `X-Forwarded-For` from non-loopback peer cannot bypass IP limit"
+      ],
+      "dependencies": ["T1"],
+      "components": ["RateLimitPlugin", "Application.module & AuthRoutes"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    }
+  ]
+}

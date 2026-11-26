@@ -1,0 +1,274 @@
+{
+  "feature_name": "SPEC-02 Contractacions",
+  "feature_slug": "spec-02-contracts",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala.feature.contracts",
+  "scaffold": "MainScaffold",
+  "summary": "Full **Contractacions** CRM (`board` & `admin` only): CRUD `/api/v1/contracts`, `advance` state shortcut, `create-event` (accepting fallback `date` in body when `performanceDate` is null), `summary` with Diputació catalog tracking (`n / DIPU_CATALOG_LIMIT`), and web Kanban + sortable table UI with 6th-Dipu confirmation dialog. **Server + web (wasmJs)**.",
+  "overview": "Fase 2 slice for managing performances, Diputació catalog bookings, grants, exchanges, and neighbourhood parties from first contact to payment.\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §4.4, §5.7, §6.7 (contrataciones), §7.4 (Contractacions), §10.1–10.2 · `docs/decisiones.md`.\n\n**Prerequisites**\n- `platform-schema-v02` (`contracts`, `events`), `platform-core-contract` (`Contract*`, `MoneyCents`, `PatchField`), `platform-server-auth`, `platform-web-shell`, `platform-openapi-deploy`.\n- `spec-03-calendar` (`EventService` reused by `POST /api/v1/contracts/{id}/create-event`).\n\n**Key business rules (§5.7 & `decisiones.md`)**\n- **Strictly `board` and `admin` only** (`anonymous` → 401; `member` and `technical` → 403 on every `/contracts*` endpoint; never exposed in `/public/*`).\n- **State progression:** normal pipeline `to_contact → contacted → proposal_sent → negotiating → confirmed → done → invoiced → paid`. Direct jumps forward/backward or to `discarded` allowed via `PATCH`. Transitioning to `invoiced` auto-fills `billing.invoicedAt = today (Europe/Madrid)` if missing; transitioning to `paid` auto-fills `billing.paidAt = today` if missing; transitioning to `discarded` requires non-blank `discardReason` (`422`).\n- **`POST /api/v1/contracts/{id}/advance`:** requires `{\"version\": N}` (`409 version_conflict` on mismatch), advances to the next normal state (applying `invoicedAt`/`paidAt` auto-fill), and rejects already-final states (`paid`, `discarded`) with `422 validation_failed`.\n- **Overdue calculation:** `overdue = (nextActionAt != null && nextActionAt < today(Europe/Madrid) && status !in {paid, discarded} && !archived)`.\n- **Diputació catalog tracking (`GET /api/v1/contracts/summary?year=`):** counts non-archived `type = dipu_catalog` contracts whose reference year (`performanceDate` in Madrid TZ, falling back to `updatedAt` if null) equals `year` (default current year): `total` = non-discarded count, `confirmed` = status in `{confirmed, done, invoiced, paid}`, `limit = EnvConfig.dipuCatalogLimit` (default 5). Server **never blocks** exceeding `limit`; webapp prompts confirmation before confirming or advancing into `confirmed` when `confirmed >= limit`.\n- **`POST /api/v1/contracts/{id}/create-event` (`decisiones.md`):** if `eventId != null` → `409 already_exists`. Uses `contract.performanceDate` as `Event.date`; if `performanceDate == null`, requires `date` (and optional `endDate`, `allDay`) in the request JSON body (otherwise `422 validation_failed`). Creates an `Event` (`name = contract.title`, `category = actuacio`, `type = actuacio`, `status = confirmed` if contract is `confirmed`+ else `planned`, `published = false`, `locationName = client.municipality`, `address = client.address`, `ownerId = contract.ownerId`) and sets `contract.eventId` + bumps `contract.version` in one transaction, returning `{contract, event}`.\n- **Archiving:** `DELETE /api/v1/contracts/{id}` sets `archived = true` (`204`); `?hard=true` is allowed for `admin` only (`403` for `board`).\n\n**Acceptance (slice)**\n- `./gradlew :server:test :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes.\n- Permission matrix test verifies `anonymous` (401), `member` (403), `technical` (403), `board` (200/201/204, 403 on `?hard=true`), `admin` (full + `?hard=true`).\n- Summary calculations (`confirmedIncome`, `openCount`, `openAmount`, `pendingPaymentAmount`, `overdueCount`, `dipuCatalog`, `byStatus`) verified in `:server:test`.\n- `create-event` works with `performanceDate`, requires `date` in body when `performanceDate == null`, and returns `409 already_exists` on second call.\n- Web UI at `/contractacions` shows summary banner with Dipu `n/5` progress bar, Kanban board with `→` advance buttons, sortable table toggle, full detail/edit form (with `grant` section only when `type = grant`), Dipu overflow confirmation dialog, and «Crea l'esdeveniment al calendari» action.\n- `OpenApiRouteSyncTest` passes.",
+  "client_scope": {
+    "preset": "server_web",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": true,
+    "ios": false,
+    "external_public_api": false
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "webApp": ":app:webApp",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "All UI, ViewModels, and repositories live in `:app:shared` `commonMain`. `:app:webApp` hosts wasm only. Android/desktop/JS out of v1 scope.",
+  "out_of_scope": "- Public API exposure (contracts are strictly internal).\n- External invoicing / PDF invoice generation.\n- Inventory (`spec-04-inventory`) and automatic notifications.\n- Android, desktop, JS, iOS clients.",
+  "external_systems": [],
+  "auth": {
+    "client": "Bearer JWT via `SessionManager`. Tab `/contractacions` visible only when `contracts:read` is present.",
+    "server": "`board` and `admin` only on all `/api/v1/contracts*` routes (`403` for `member` and `technical`). `?hard=true` delete requires `admin`."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §4.4, §5.7, §6.7, §7.4, §10.2",
+    "docs/decisiones.md",
+    "specs/spec-03-calendar"
+  ],
+  "images": [
+    {
+      "path": "assets/tauler-desktop.png",
+      "caption": "Contractacions Kanban default view: 5 clickable KPI filter cards (Ingressos confirmats, Obertes, Pendent de cobrament, Catàleg Dipu n/5 progress, Atrasada in cream/red), Tauler/Taula segmented toggle, filters, and Kanban status columns",
+      "kind": "desktop"
+    },
+    {
+      "path": "assets/ingressos-confirmats-desktop.png",
+      "caption": "Contractacions with Ingressos confirmats KPI card active (cream fill + navy border/top stripe filtering the Kanban board to confirmed+ statuses)",
+      "kind": "desktop"
+    },
+    {
+      "path": "assets/edita-contractacio-desktop.png",
+      "caption": "Edita la contractació right-side drawer with grouped white cards (Informació bàsica, Client i contacte, etc.) and sticky Cancel·la / DESA footer",
+      "kind": "drawer"
+    },
+    {
+      "path": "assets/nova-contractacio-desktop.png",
+      "caption": "Nova contractació centered modal chrome (CREAR / Cancel·la / CREA — implement with real Contract fields; prototype mockup shows placeholder event fields)",
+      "kind": "modal"
+    }
+  ],
+  "components": [
+    {
+      "name": "Contracts.sq",
+      "location": "server/src/main/sqldelight/com/bitdesal/tabala/db/Contracts.sq",
+      "decision": "create",
+      "usage": "SQLDelight queries for filtered/paginated/sorted contract listing (`type`, `status` list, `ownerId`, `overdue`, `archived`, `year`, `q`), summary aggregation, optimistic-locked updates, and archive/hard-delete.",
+      "notes": "Amounts stored in `INTEGER` cents and mapped to `MoneyCents`.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "ContractService",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/contracts/ContractService.kt",
+      "decision": "create",
+      "usage": "CRUD, state transition rules (`invoicedAt`/`paidAt` auto-fill, `discardReason` requirement, `grant` allowed only when `type = grant`), `advance`, `createEvent` (calling `EventService` inside one transaction), `summary(year)`, and archive/hard-delete.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "ContractRoutes",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/routes/ContractRoutes.kt",
+      "decision": "create",
+      "usage": "Mounts `/api/v1/contracts*` guarded by `requireRole(BOARD, ADMIN)`.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "MuixerangaApi (contracts extension)",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/api/client/ContractsApi.kt",
+      "decision": "create",
+      "usage": "Client calls for `listContracts`, `getContract`, `createContract`, `patchContract`, `deleteContract`, `advanceContract`, `createEventFromContract`, `getContractsSummary`.",
+      "notes": "",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "ContractsRepository + ContractsViewModel",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/contracts/",
+      "decision": "create",
+      "usage": "Manages filters (`type`, `ownerId`, `year`, `overdueOnly`, `archived`, `q`), Kanban/Table view mode, summary state, Dipu confirmation gating before `confirmed`, `createEvent` date prompt when `performanceDate == null`, and `409` conflict recovery.",
+      "notes": "",
+      "layer": "viewmodel",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "ContractsScreen + ContractEditDrawer + NewContractModal",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/contracts/",
+      "decision": "create",
+      "usage": "Routes `/contractacions` and `/contractacions/{id}` matching mockups: `SectionHeader` + `+ NOVA CONTRACTACIÓ`, `KpiFilterStrip` (5 clickable filter cards: `Ingressos confirmats`, `Obertes`, `Pendent de cobrament`, `Catàleg Dipu n/limit` with progress bar, `Atrasada` cream/red), `Tauler` / `Taula` segmented toggle + filters, Kanban board with `→` advance & overdue red highlight, sortable table view, right-side `Edita la contractació` drawer (`Informació bàsica`, `Client i contacte`, import/IVA, `Subvenció` when `type = grant`, `Facturació`, «Crea l'esdeveniment al calendari», sticky `Cancel·la` / `DESA`), and centered `Nova contractació` modal using real contract fields.",
+      "notes": "",
+      "layer": "ui",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    }
+  ],
+  "structure": "Vertical slice flow:\n\n```text\nWeb /contractacions & /contractacions/{id}\n  → ContractsViewModel → ContractsRepository → MuixerangaApi\n  ↕ JSON over HTTPS (Bearer, board/admin only)\nServer ContractRoutes → ContractService (+ EventService) → Contracts.sq (SQLite v0.2)\n```\n\nSummary metrics (`GET /api/v1/contracts/summary?year=YYYY`, non-archived contracts of that year):\n- `confirmedIncome`: sum of `amount` (`MoneyCents`) for `status ∈ {confirmed, done, invoiced, paid}`\n- `openCount` / `openAmount`: count & sum of `amount` for `status ∈ {to_contact, contacted, proposal_sent, negotiating}`\n- `pendingPaymentAmount`: sum of `amount` for `status ∈ {done, invoiced}`\n- `overdueCount`: count where `overdue == true`\n- `dipuCatalog`: `{confirmed, limit, total}`\n- `byStatus`: map of `ContractStatus -> {count, amount}`",
+  "sections": [
+    {
+      "title": "Filters, sorting & pagination (§6.2 & §6.7)",
+      "description": "`GET /api/v1/contracts` supports `page`, `perPage`, `type`, `status` (comma-separated list), `ownerId`, `overdue` (bool), `archived` (default `false`), `year` (matches `performanceDate` year or `updatedAt` year when `performanceDate` is null), `q` (case-insensitive search in `title`, `client_name`, `client_municipality`), and `sort` (`updatedAt`, `performanceDate`, `nextActionAt`, `amount`, `title`; default `-updatedAt`).",
+      "behavior": "Validate sort field names strictly against an allowlist (`400 invalid_parameter` on unknown fields); never concatenate user input into SQL."
+    },
+    {
+      "title": "Diputació limit confirmation & create-event flow",
+      "description": "When the user creates, edits, or clicks `→` advance to set a `dipu_catalog` contract to `confirmed` (or later) and `summary.dipuCatalog.confirmed >= summary.dipuCatalog.limit`, the UI displays a confirmation dialog in Valencian before sending the mutation.",
+      "behavior": "When clicking «Crea l'esdeveniment al calendari», if `contract.performanceDate != null`, call `POST /contracts/{id}/create-event` directly; if `null`, open a modal requesting `date` (required) + optional `endDate`/`allDay` and submit them in the request body. On success, display the link to the newly created calendar event."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "List contracts",
+      "method": "GET",
+      "path": "/api/v1/contracts",
+      "notes": "`board`/`admin`. Paginated + filters (`type`, `status`, `ownerId`, `overdue`, `archived`, `year`, `q`) + `sort` (default `-updatedAt`).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Contracts summary",
+      "method": "GET",
+      "path": "/api/v1/contracts/summary",
+      "notes": "`board`/`admin`. Optional `?year=YYYY` (defaults to current year in `Europe/Madrid`). Includes `dipuCatalog` and `byStatus`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Get contract",
+      "method": "GET",
+      "path": "/api/v1/contracts/{id}",
+      "notes": "`board`/`admin`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Create contract",
+      "method": "POST",
+      "path": "/api/v1/contracts",
+      "notes": "`board`/`admin`. `201` + `Location`. Default `status = to_contact`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Update contract",
+      "method": "PATCH",
+      "path": "/api/v1/contracts/{id}",
+      "notes": "`board`/`admin`. RFC 7386 with `version`. Enforces `discardReason` and auto-fills `invoicedAt`/`paidAt`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Archive or delete contract",
+      "method": "DELETE",
+      "path": "/api/v1/contracts/{id}",
+      "notes": "`board`/`admin`: sets `archived = true` (`204`). `?hard=true`: `admin` only (`403` for `board`).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Advance contract status",
+      "method": "POST",
+      "path": "/api/v1/contracts/{id}/advance",
+      "notes": "`board`/`admin`. Body `{\"version\": N}`. Moves to next normal status; `422` if `paid` or `discarded`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Create linked calendar event",
+      "method": "POST",
+      "path": "/api/v1/contracts/{id}/create-event",
+      "notes": "`board`/`admin`. Optional body `{\"date\", \"endDate\"?, \"allDay\"?}` required when `performanceDate` is null. Returns `{contract, event}`; `409 already_exists` if already linked.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    }
+  ],
+  "persistence": "Uses SQLite v0.2 `contracts` and `events` tables via `Contracts.sq`. No new migrations.",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Contracts.sq + ContractService",
+      "spec": "Implement SQLDelight queries and `ContractService`: CRUD with `PatchField` + `version`, overdue calculation in `Europe/Madrid`, `invoicedAt`/`paidAt` auto-fill, `discardReason` + `grant` validation, `advance`, transactional `createEvent` (using `performanceDate` or required body `date`), `summary(year)` with `DIPU_CATALOG_LIMIT`, and archive/`?hard=true`.",
+      "acceptance_criteria": [
+        "Transitioning to `discarded` without `discardReason` returns `422`",
+        "Transitioning to `invoiced`/`paid` auto-fills dates when absent",
+        "`createEvent` returns `422` when both `performanceDate` and body `date` are missing, `201`/`200` when provided, and `409 already_exists` on repeat"
+      ],
+      "dependencies": [],
+      "components": ["Contracts.sq", "ContractService"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T2",
+      "title": "ContractRoutes + OpenAPI + permission tests",
+      "spec": "Register all 8 `/api/v1/contracts*` routes with `board`/`admin` guard, update `openapi.yaml`, and add `:server:test` matrix verifying `anonymous` (401), `member` (403), `technical` (403), `board` (CRUD + 403 on `?hard=true`), `admin` (CRUD + `?hard=true`), and summary/Dipu calculations.",
+      "acceptance_criteria": [
+        "`./gradlew :server:test` passes including `OpenApiRouteSyncTest`"
+      ],
+      "dependencies": ["T1"],
+      "components": ["ContractRoutes"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T3",
+      "title": "MuixerangaApi contracts + ContractsRepository + ContractsViewModel",
+      "spec": "Add client methods in `:core` and build repository + ViewModel in `:app:shared` managing Kanban columns, sortable table state, filters, Dipu overflow confirmation trigger, and create-event date prompt.",
+      "acceptance_criteria": [
+        "`jvmTest` verifies Dipu confirmation is requested when `confirmed >= limit`",
+        "`jvmTest` verifies create-event opens date prompt when `performanceDate == null`"
+      ],
+      "dependencies": ["T2"],
+      "components": ["MuixerangaApi (contracts extension)", "ContractsRepository + ContractsViewModel"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T4",
+      "title": "ContractsScreen (Kanban + Table) + ContractEditDrawer + NewContractModal",
+      "spec": "Wire `/contractacions` and `/contractacions/{id}` in `AppNavigation`. Render clickable `KpiFilterStrip` (5 KPI cards incl. Dipu `n/limit` progress & `Atrasada`), `Tauler` / `Taula` segmented control, Kanban board with `→` advance, sortable table view, filter bar, right-side `Edita la contractació` drawer (also reachable directly at `/contractacions/{id}`), centered `Nova contractació` modal with real contract fields, Dipu overflow confirmation dialog, and «Crea l'esdeveniment al calendari» flow.",
+      "acceptance_criteria": [
+        "`./gradlew :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes"
+      ],
+      "dependencies": ["T3"],
+      "components": ["ContractsScreen + ContractEditDrawer + NewContractModal"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    }
+  ]
+}

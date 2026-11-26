@@ -1,0 +1,349 @@
+{
+  "feature_name": "SPEC-01 Organigrama",
+  "feature_slug": "spec-01-org-chart",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala.feature.orgchart",
+  "scaffold": "MainScaffold",
+  "summary": "Full **Organigrama** (Assemblea → Junta directiva + 7 áreas + 40 cargos): private `/api/v1/org-chart`, CRUD `/areas` & `/org-roles`, `PUT /org-roles/{id}/holders`, public RGPD-filtered `/api/v1/public/org-chart`, and hierarchical web UI with person/vacant filters and board editing. **Server + web (wasmJs) + Astro public API**.",
+  "overview": "First functional Fase 2 slice. Exposes the v0.2 organigrama seeded by `platform-schema-v02` (`V2__seed.sqm`) through private and public APIs and renders the interactive hierarchy in the management webapp.\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §4.4, §5.5, §6.7 (organigrama), §6.8 (`/public/org-chart`), §7.4 (Organigrama), §10.1–10.2, §12.1 · `docs/decisiones.md`.\n\n**Prerequisites**\n- `platform-schema-v02` (`areas`, `org_roles`, `org_role_holders`, 8 areas + 40 roles seed).\n- `platform-core-contract` (`Area`, `OrgRole`, `OrgChartResponse`, `PublicOrgChartResponse`, `PatchField`).\n- `platform-server-auth` + `platform-web-shell` + `platform-openapi-deploy`.\n- **Note on holder picker:** assigning holders in the UI searches active members via `GET /api/v1/users?status=active` (implemented in `spec-05-members`; until `spec-05-members` merges, the picker accepts a lightweight `GET /api/v1/org-chart/candidates` or is wired directly to `GET /api/v1/users` once `spec-05-members` lands — recommended order: ship server CRUD of `spec-05-members` before or alongside the UI holder picker).\n\n**Key business & RGPD rules**\n- Only **one** `Area` can have `kind = board` (enforced by partial unique index → `409 duplicate`). `Area.slug` is unique globally; `(OrgRole.areaId, OrgRole.name)` is unique per area (`409 duplicate`).\n- Deleting an `Area` that still has `org_roles` fails with `409 in_use` (`ON DELETE RESTRICT`). Deleting the `board` area is forbidden (`409 in_use` / `422`).\n- `PUT /api/v1/org-roles/{id}/holders` validates `version` (`409 version_conflict`), verifies every `holderId` refers to an existing non-`deleted` user (`422 validation_failed` otherwise), deduplicates IDs, replaces `org_role_holders` in one transaction, and increments `org_roles.version`.\n- Private `GET /api/v1/org-chart` returns Junta first (`kind = board`), then areas ordered by `sort_order, name`, with each area's roles ordered by `sort_order, name` and holder summaries `{id, name, lastNames, nickname, avatar}` (includes minors internally per `decisiones.md`). `notes` on `Area` is included **only** for `board`/`admin` (`null`/omitted for `member`/`technical`).\n- Public `GET /api/v1/public/org-chart` (`Cache-Control: public, max-age=300`): returns all areas (`id`, `name`, `slug`, `kind`, `order`) and roles (`id`, `areaId`, `name`, `isLead`, `order`, `holders`) where `holders` includes **only** users with `status = active && consent.publicProfile == true && !isMinor`. Never exposes `vacant` boolean or hidden holder counts (so callers cannot infer whether a role is held by a minor or non-public member).\n\n**Acceptance (slice)**\n- `./gradlew :server:test :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes.\n- `GET /api/v1/org-chart` returns 8 seeded areas and 40 roles; `notes` omitted for `member`/`technical`, present for `board`/`admin`.\n- `GET /api/v1/public/org-chart` never exposes minors, `deleted`/inactive users, or users without `consent.publicProfile`.\n- Permission matrix test verifies: `anonymous` (public only, 401 private), `member` & `technical` (read private, 403 write), `board` & `admin` (full CRUD).\n- UI at `/organigrama` renders Assemblea → navy Junta → 3-column area grid, clickable KPI strip (Àrees, Càrrecs, Vacants, Persones amb càrrec), person filter with summary text («Toni ocupa: …»), «Només vacants» toggle, and board right-side drawers (`Gestiona les àrees`, `Edita l'àrea`, `Edita el càrrec` / holders).\n- `OpenApiRouteSyncTest` passes.",
+  "client_scope": {
+    "preset": "server_web",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": true,
+    "ios": false,
+    "external_public_api": true
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "webApp": ":app:webApp",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "All screens, ViewModels, and repositories live in `:app:shared` `commonMain`. `:app:webApp` only hosts the wasm shell. Android/desktop/JS out of v1 scope.",
+  "out_of_scope": "- User CRUD & member archiving (`spec-05-members`, which removes archived/deleted users from `org_role_holders`).\n- Role-based permissions derived from `OrgRole` (§4.2 future phase).\n- Android, desktop, JS, iOS clients.",
+  "external_systems": [
+    {
+      "name": "Astro (muixerangadelx.com)",
+      "role": "Consumes `GET /api/v1/public/org-chart` anonymously with 5-minute cache."
+    }
+  ],
+  "auth": {
+    "client": "Bearer JWT via `SessionManager`. UI checks `org-chart:read` (all authenticated roles) and `board`/`admin` write actions via permissions.",
+    "server": "Private read: `member`, `technical`, `board`, `admin` (with `Area.notes` restricted to `board`/`admin`). Write (`POST`/`PATCH`/`DELETE` areas & org-roles, `PUT` holders): `board`, `admin`. Public read: anonymous."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §4.4, §5.5, §6.7, §6.8, §7.4, §12.1",
+    "docs/decisiones.md",
+    "specs/platform-schema-v02"
+  ],
+  "images": [
+    {
+      "path": "assets/dashboard-desktop.png",
+      "caption": "Organigrama dashboard: 4 KPI cards (Àrees, Càrrecs, Vacants in cream/red, Persones amb càrrec), person search + Només vacants toggle, Assemblea → navy Junta directiva → 3-column area grid with ★ lead star, Vacant highlights, and per-area EDITA",
+      "kind": "desktop"
+    },
+    {
+      "path": "assets/dashboard-vacants-desktop.png",
+      "caption": "Organigrama filtered with Només vacants switch enabled (shows only vacant role rows inside each area card)",
+      "kind": "desktop"
+    },
+    {
+      "path": "assets/edita-area-desktop.png",
+      "caption": "Edita l'àrea right-side drawer: Nom, Descripció, Estat, Color, Grup de WhatsApp, Freqüència de reunió, yellow-highlighted Notes internes de l'àrea, and sticky Cancel·la / DESA footer",
+      "kind": "drawer"
+    },
+    {
+      "path": "assets/gestiona-arees-desktop.png",
+      "caption": "Gestiona les àrees right-side drawer (+ EDITA L'ORGANIGRAMA): + Afig una àrea button, area list with inline status dropdown + Elimina action, and DESA ELS CANVIS footer",
+      "kind": "drawer"
+    }
+  ],
+  "components": [
+    {
+      "name": "OrgChart.sq",
+      "location": "server/src/main/sqldelight/com/bitdesal/tabala/db/OrgChart.sq",
+      "decision": "create",
+      "usage": "SQLDelight queries for `areas`, `org_roles`, `org_role_holders` joined with `users` + `stored_files`, count roles per area, and version-checked updates.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "OrgChartService",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/orgchart/OrgChartService.kt",
+      "decision": "create",
+      "usage": "Transactional business logic: build private/public org-chart trees, CRUD areas & org-roles with optimistic locking (`409 version_conflict`), uniqueness mapping (`409 duplicate`), `409 in_use` on deleting area with roles, and `replaceHolders` validating non-deleted users.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "OrgChartMapper",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/mapping/OrgChartMapper.kt",
+      "decision": "create",
+      "usage": "Audience mapping: `members` (omits `Area.notes`), `board` (includes `Area.notes`), and `public` (filters `holders` by `status=active && publicProfile && !isMinor`, omits `vacant`/`notes`/`whatsappGroup`/`description`).",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "OrgChartRoutes",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/routes/OrgChartRoutes.kt",
+      "decision": "create",
+      "usage": "Registers `/api/v1/org-chart`, `/api/v1/areas*`, `/api/v1/org-roles*`, and `/api/v1/public/org-chart`.",
+      "notes": "Sets `Cache-Control: public, max-age=300` on public route.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "MuixerangaApi (orgChart extension)",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/api/client/OrgChartApi.kt",
+      "decision": "create",
+      "usage": "Ktor Client methods for `getOrgChart`, `listAreas`, `createArea`, `patchArea`, `deleteArea`, `createOrgRole`, `patchOrgRole`, `deleteOrgRole`, `replaceOrgRoleHolders`.",
+      "notes": "",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "OrgChartRepository + OrgChartViewModel",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/orgchart/",
+      "decision": "create",
+      "usage": "Loads org chart, computes summary metrics (`areaCount`, `roleCount`, `vacantCount`, `peopleWithRolesCount`), manages person highlight filter, «Només vacants» toggle, board CRUD + reorder + holder assignment, and `409 version_conflict` reload dialog.",
+      "notes": "",
+      "layer": "viewmodel",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "OrgChartScreen + Area/Role/Holders drawers",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/orgchart/OrgChartScreen.kt",
+      "decision": "create",
+      "usage": "Route `/organigrama` matching mockups: `SectionHeader` + `+ EDITA L'ORGANIGRAMA` CTA (`board`/`admin`), 4 KPI cards (`Àrees`, `Càrrecs`, `Vacants` cream/red, `Persones amb càrrec`), `Filtra per persona` input + `Només vacants` switch, hierarchy (`Assemblea de socis` dark pill → navy `Junta directiva` bar with 4 columns → 3-column area grid with color dot, vacant count, `EDITA` button, `★` lead marker, holder initials+name or cream `Vacant` row), and right-side drawers (`Gestiona les àrees`, `Edita l'àrea` incl. `meetingFrequency` & yellow `Notes internes`, and `Edita el càrrec` / holder picker).",
+      "notes": "",
+      "layer": "ui",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    }
+  ],
+  "structure": "Vertical slice flow:\n\n```text\nWeb /organigrama (OrgChartScreen → OrgChartViewModel → OrgChartRepository → MuixerangaApi)\n  ↕ JSON over HTTPS\nServer OrgChartRoutes → OrgChartService → OrgChartMapper → OrgChart.sq (SQLite v0.2)\n  ↑\nAstro public site → GET /api/v1/public/org-chart (Cache-Control: public, max-age=300)\n```",
+  "sections": [
+    {
+      "title": "Public RGPD filtering (§5.5 & §6.8)",
+      "description": "`GET /api/v1/public/org-chart` exposes the full organizational structure (Junta + areas ordered by `order`, all roles ordered by `order` with `name` and `isLead`), but filters `holders` strictly to active adult members with `consent.publicProfile == true`.",
+      "behavior": "Never include `vacant`, `notes`, `whatsappGroup`, `description`, or any count of omitted holders on the public response. Compute `isMinor` in `Europe/Madrid` timezone from `birth_date`."
+    },
+    {
+      "title": "UI hierarchy, filtering & board drawers (§7.4 & mockups)",
+      "description": "Top KPI strip shows 4 cards inside the light-grey container: `Àrees`, `Càrrecs`, `Vacants` (cream fill, red count), and `Persones amb càrrec`. Filter toolbar provides `Filtra per persona` and a `Només vacants` toggle switch.",
+      "behavior": "Selecting/filtering a person highlights every role they hold, dims other rows, and displays a summary strip («<Nom> ocupa: <càrrec 1>; <càrrec 2>»). Toggling `Només vacants` filters each area card to display only vacant role rows. Users with `board`/`admin` see `+ EDITA L'ORGANIGRAMA` (opening the `Gestiona les àrees` right-side drawer to add/reorder/change status/delete areas), per-area `EDITA` buttons (opening `Edita l'àrea` right-side drawer with Nom, Descripció, Estat, Color, Grup de WhatsApp, Freqüència de reunió, and yellow-accented Notes internes), and role-click editing to update role details and assign holders (`PUT /org-roles/{id}/holders`)."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "Get full org chart",
+      "method": "GET",
+      "path": "/api/v1/org-chart",
+      "notes": "Single call returning Junta + areas + roles + holder summaries (includes minors internally; `notes` only for `board`/`admin`).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "List areas",
+      "method": "GET",
+      "path": "/api/v1/areas",
+      "notes": "Ordered by `kind` (board first), `order`, `name`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Get area",
+      "method": "GET",
+      "path": "/api/v1/areas/{id}",
+      "notes": "Includes its roles; `notes` only for `board`/`admin`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Create area",
+      "method": "POST",
+      "path": "/api/v1/areas",
+      "notes": "`board`/`admin`. `201` + `Location`. `409 duplicate` on slug or second `board`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Update area",
+      "method": "PATCH",
+      "path": "/api/v1/areas/{id}",
+      "notes": "`board`/`admin`. RFC 7386 with `version` (`409 version_conflict`).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Delete area",
+      "method": "DELETE",
+      "path": "/api/v1/areas/{id}",
+      "notes": "`board`/`admin`. `204`, or `409 in_use` if area has roles or `kind = board`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "List org roles",
+      "method": "GET",
+      "path": "/api/v1/org-roles",
+      "notes": "Optional filter `?areaId=`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Get org role",
+      "method": "GET",
+      "path": "/api/v1/org-roles/{id}",
+      "notes": "Includes `holderIds` and derived `vacant`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Create org role",
+      "method": "POST",
+      "path": "/api/v1/org-roles",
+      "notes": "`board`/`admin`. `201` + `Location`. `409 duplicate` if `(areaId, name)` exists.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Update org role",
+      "method": "PATCH",
+      "path": "/api/v1/org-roles/{id}",
+      "notes": "`board`/`admin`. RFC 7386 with `version`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Delete org role",
+      "method": "DELETE",
+      "path": "/api/v1/org-roles/{id}",
+      "notes": "`board`/`admin`. `204`; cascades `org_role_holders`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Replace role holders",
+      "method": "PUT",
+      "path": "/api/v1/org-roles/{id}/holders",
+      "notes": "`board`/`admin`. Body `{\"holderIds\": [...], \"version\": N}`. Transactional replace + bumps `version`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Public org chart",
+      "method": "GET",
+      "path": "/api/v1/public/org-chart",
+      "notes": "Anonymous, `Cache-Control: public, max-age=300`. Public adult holders only.",
+      "implemented_on": "server",
+      "consumed_by": [],
+      "auth": "none"
+    }
+  ],
+  "persistence": "Uses SQLite v0.2 tables `areas`, `org_roles`, `org_role_holders`, `users`, `stored_files` via `OrgChart.sq`. No new migrations.",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "OrgChart.sq + OrgChartService + OrgChartMapper",
+      "spec": "Create SQLDelight queries, transactional service (areas CRUD, org-roles CRUD, `replaceHolders` validating non-deleted users, `409 duplicate`, `409 in_use`, `409 version_conflict`), and audience mapper (`members`, `board`, `public`). Register in Koin.",
+      "acceptance_criteria": [
+        "`GET /org-chart` returns 8 areas + 40 roles ordered Junta-first",
+        "Deleting an area with roles returns `409 in_use`",
+        "`PUT /org-roles/{id}/holders` rejects stale `version` with `409 version_conflict` and deleted users with `422`"
+      ],
+      "dependencies": [],
+      "components": ["OrgChart.sq", "OrgChartService", "OrgChartMapper"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T2",
+      "title": "OrgChartRoutes (private + public) + OpenAPI",
+      "spec": "Register all 13 endpoints under `/api/v1` and `/api/v1/public/org-chart` (with `Cache-Control: public, max-age=300`). Update `openapi.yaml`.",
+      "acceptance_criteria": [
+        "`OpenApiRouteSyncTest` passes",
+        "Public route returns `Cache-Control: public, max-age=300` and omits minors/non-public holders and `vacant`"
+      ],
+      "dependencies": ["T1"],
+      "components": ["OrgChartRoutes"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T3",
+      "title": "Permission matrix & RGPD server tests",
+      "spec": "Add `:server:test` suite verifying every role (`anonymous`, `member`, `technical`, `board`, `admin`) across all 13 endpoints, `Area.notes` visibility, minor inclusion privately vs exclusion publicly, and `version_conflict`.",
+      "acceptance_criteria": [
+        "`./gradlew :server:test` passes"
+      ],
+      "dependencies": ["T2"],
+      "components": [],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T4",
+      "title": "MuixerangaApi orgChart + OrgChartRepository + OrgChartViewModel",
+      "spec": "Add org-chart client methods in `:core` and build `OrgChartRepository` + `OrgChartViewModel` in `:app:shared` computing metrics, person highlight state, «Només vacants» filter, board mutations, and `409` reload state.",
+      "acceptance_criteria": [
+        "`jvmTest` verifies summary counts, person filter summary text, vacant-only filter, and `409` conflict state"
+      ],
+      "dependencies": ["T2"],
+      "components": ["MuixerangaApi (orgChart extension)", "OrgChartRepository + OrgChartViewModel"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T5",
+      "title": "OrgChartScreen UI + board drawers + navigation wiring",
+      "spec": "Replace `/organigrama` placeholder in `AppNavigation` with `OrgChartScreen`: KPI card strip (`Àrees`, `Càrrecs`, `Vacants`, `Persones amb càrrec`), person filter + `Només vacants` switch, Assemblea → navy Junta → 3-column area grid (`★` lead star, cream vacant rows, `EDITA` per area), and right-side board drawers (`Gestiona les àrees`, `Edita l'àrea` incl. `meetingFrequency`, and `Edita el càrrec` / holder picker).",
+      "acceptance_criteria": [
+        "`./gradlew :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes",
+        "Write controls hidden for `member`/`technical`, visible for `board`/`admin`"
+      ],
+      "dependencies": ["T4"],
+      "components": ["OrgChartScreen + Area/Role/Holders drawers"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    }
+  ]
+}

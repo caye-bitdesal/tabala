@@ -1,0 +1,298 @@
+{
+  "feature_name": "SPEC-04 Inventari",
+  "feature_slug": "spec-04-inventory",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala.feature.inventory",
+  "scaffold": "MainScaffold",
+  "summary": "Full **Inventari** (`board` & `admin` only): CRUD `/api/v1/inventory-items` with variant editor & supplier reorder fields (`supplierContact`, `supplierReference`, `minOrderQty`, `leadTime`, `lastOrderedAt`), atomic `POST .../adjust` and `POST .../sell` (tracking `unitsSold` & `revenue`), protected image upload/delete, `GET .../summary`, and web UI with clickable KPI filter cards, variant chips, `REGISTRA VENDA` & `Informació de comanda` modals. **Server + web (wasmJs)**.",
+  "overview": "Fase 2 slice for tracking colla merchandising, clothing, technical gear, and other equipment with per-variant stock, low-stock alerts, supplier reorder info, and merchandising sales tracking.\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §4.4, §5.8, §6.7 (inventario), §7.4 (Inventari), §10.2 · `docs/decisiones.md`.\n\n**Prerequisites**\n- `platform-schema-v02` (`inventory_items` incl. supplier reorder & sales columns, `inventory_variants`), `platform-core-contract` (`InventoryItem*`, `InventorySellRequest`, `MoneyCents`, `PatchField`), `platform-server-auth`, `platform-files` (for protected item images), `platform-web-shell`, `platform-openapi-deploy`.\n\n**Key business rules (§5.8, §6.7 & `decisiones.md`)**\n- **Strictly `board` and `admin` only** (`anonymous` → 401; `member` and `technical` → 403; never public).\n- **Variants:** every item MUST have ≥ 1 variant with unique `label` (case-insensitive trimmed uniqueness within item; default single variant `label = \"única\"`), `quantity >= 0`, `minStock >= 0`. Derived fields: `totalQuantity = sum(variants.quantity)` and `lowStock = variants.any { it.quantity <= it.minStock }`.\n- **Supplier reorder fields (`decisiones.md`):** optional `supplier`, `supplierContact`, `supplierReference`, `minOrderQty` (`>= 0`), `leadTime`, `lastOrderedAt` (`LocalDate`), and `unitCost` (`MoneyCents`), shown in the «Informació de comanda» modal and editable in «Edita l'article».\n- **Atomic stock adjustment (`POST /api/v1/inventory-items/{id}/adjust`):** body `{\"variant\": \"M\", \"delta\": -1}` (**no `version`** required). Executed atomically in SQL (`UPDATE inventory_variants SET quantity = quantity + :delta WHERE item_id = :id AND label = :label AND quantity + :delta >= 0`): rejects archived items (`422`), unknown variant label (`404`/`422`), and any result `< 0` (`422 validation_failed`).\n- **Atomic sale registration (`POST /api/v1/inventory-items/{id}/sell`, `decisiones.md`):** body `{\"variant\": \"S\", \"quantity\": 1, \"unitPrice\"?: 15.00}` (`quantity >= 1`, default `1`; **no `version`** required). Rejects archived items or items with `forSale == false` (`422`). Uses `unitPrice` if provided else `item.salePrice` (`422` if null). In one write transaction: atomically decrements `inventory_variants.quantity` (guarded by `quantity >= :qty`, else `422`), increments `inventory_items.units_sold += :qty` and `revenue_cents += :qty * unitPriceCents`, bumps `updated_at`, and returns the updated `InventoryItem`.\n- **Summary formulas (`GET /api/v1/inventory-items/summary`, non-archived items only):**\n  - `itemCount`: count of non-archived items.\n  - `merchUnits`: sum of `quantity` across variants of items with `category = merch`.\n  - `merchSaleValue`: sum of `variant.quantity * (item.salePrice ?: 0)` (`MoneyCents`) across items with `category = merch`.\n  - `lowStockCount`: count of non-archived items where `lowStock == true`.\n  - `uncountedCount`: count of non-archived items where `lastCountedAt == null` («per comptar»).\n- **Archiving:** `DELETE /api/v1/inventory-items/{id}` sets `archived = true` (`204`); `?hard=true` is `admin` only (also deletes stored item image from `FILES_DIR`).\n- **Protected images:** item photos are private (`board`/`admin` only); the web UI fetches thumbnails via `SessionManager.fetchAuthorizedBytes(thumbUrl)`.\n\n**Acceptance (slice)**\n- `./gradlew :server:test :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes.\n- Permission matrix verifies `anonymous` (401), `member` (403), `technical` (403), `board` (CRUD + 403 on `?hard=true`), `admin` (full + `?hard=true`).\n- Concurrent `/adjust` and `/sell` requests decrement cleanly without losing updates and return `422` before going below 0; `/sell` accurately increments `unitsSold` & `revenue` and rejects `forSale == false` items.\n- Web UI at `/inventari` matches reference mockups: clickable 5-card KPI filter strip (`Articles`, `Unitats de marxandatge`, `Valor de venda`, `Estoc baix`, `Per comptar`), search + category/status dropdowns, item rows with category badge, status badge, variant chips (low-stock red outline), `Preu de venda`, `Unitats venudes` / `Ingressos generats`, `REGISTRA VENDA` (or disabled `Este article no es ven`), `...` menu (`Consulta la comanda`, `Edita l'article`, `Marca com a comptat`), and modals (`Informació de comanda`, `Registra venda` with post-sale stock preview, `Edita l'article`, `Nou article`).\n- `OpenApiRouteSyncTest` passes.",
+  "client_scope": {
+    "preset": "server_web",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": true,
+    "ios": false,
+    "external_public_api": false
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "webApp": ":app:webApp",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "All inventory UI, ViewModels, and repositories live in `:app:shared` `commonMain`. `:app:webApp` hosts wasm only. Android/desktop/JS out of v1 scope.",
+  "out_of_scope": "- Public catalog or online store / checkout.\n- Stock movement audit log (future phase).\n- Android, desktop, JS, iOS clients.",
+  "external_systems": [],
+  "auth": {
+    "client": "Bearer JWT via `SessionManager`. Tab `/inventari` visible only when `inventory:read` is present.",
+    "server": "`board` and `admin` only (`403` for `member` and `technical`). `?hard=true` delete requires `admin`."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §4.4, §5.8, §6.7, §7.4, §10.2",
+    "docs/decisiones.md",
+    "specs/platform-files"
+  ],
+  "images": [
+    {
+      "path": "assets/llista-desktop.png",
+      "caption": "Inventari default list: 5 clickable KPI filter cards (Articles active, Unitats de marxandatge, Valor de venda, Estoc baix cream/red, Per comptar), search + category/status filters, item rows with variant chips (red border on low stock), Preu de venda, Unitats venudes / Ingressos generats, REGISTRA VENDA or Este article no es ven, and ... overflow menu",
+      "kind": "desktop"
+    },
+    {
+      "path": "assets/llista-filtrada-desktop.png",
+      "caption": "Inventari filtered by clicking Unitats de marxandatge KPI card (active card highlighted in cream + navy border/top stripe)",
+      "kind": "desktop"
+    },
+    {
+      "path": "assets/llista-opcions-desktop.png",
+      "caption": "Item row ... overflow menu: Consulta la comanda, Edita l'article, Marca com a comptat",
+      "kind": "desktop"
+    },
+    {
+      "path": "assets/informacio-comanda-desktop.png",
+      "caption": "Informació de comanda centered modal: stock summary callout, Proveïdor, Contacte de comandes, Referència, Comanda mínima, Termini de lliurament, Última comanda, Preu de cost, TANCA",
+      "kind": "modal"
+    },
+    {
+      "path": "assets/registra-venda-desktop.png",
+      "caption": "Registra venda centered modal: item summary with unit price, Talla o variant dropdown, live Existències després de la venda preview, Cancel·la / REGISTRA LA VENDA",
+      "kind": "modal"
+    },
+    {
+      "path": "assets/edita-article-desktop.png",
+      "caption": "Edita l'article centered modal: Nom de l'article, Categories, Preu de venda, Quantitats per talla, Proveïdor, Contacte de comandes, Referència, Comanda mínima, Cancel·la / DESA",
+      "kind": "modal"
+    },
+    {
+      "path": "assets/nou-article-desktop.png",
+      "caption": "Nou article centered modal chrome (CREAR / Cancel·la / CREA — implement with real InventoryItem fields; prototype mockup shows placeholder event fields)",
+      "kind": "modal"
+    }
+  ],
+  "components": [
+    {
+      "name": "Inventory.sq",
+      "location": "server/src/main/sqldelight/com/bitdesal/tabala/db/Inventory.sq",
+      "decision": "create",
+      "usage": "SQLDelight queries for `inventory_items` + `inventory_variants` filtering (`category`, `lowStock`, `forSale`, `archived`, `q`, `sort`), atomic `adjustVariantQuantity`, summary aggregation, and archive/delete.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "InventoryService",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/inventory/InventoryService.kt",
+      "decision": "create",
+      "usage": "CRUD items + variants (`≥1`, unique labels, default `\"única\"`, supplier reorder fields), atomic `adjust`, atomic `sell` (decrements stock + updates `units_sold`/`revenue_cents`), `summary`, image upload/delete via `FileStorageService`, and archive/`?hard=true`.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "InventoryRoutes",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/routes/InventoryRoutes.kt",
+      "decision": "create",
+      "usage": "Mounts all 9 `/api/v1/inventory-items*` endpoints (including `/adjust` and `/sell`) guarded by `requireRole(BOARD, ADMIN)`.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "MuixerangaApi (inventory extension)",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/api/client/InventoryApi.kt",
+      "decision": "create",
+      "usage": "Client methods for list, summary, get, create, patch, delete, adjust, sell, uploadImage, deleteImage.",
+      "notes": "",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "InventoryRepository + InventoryViewModel",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/inventory/",
+      "decision": "create",
+      "usage": "Manages item list, clickable KPI filters (`all`, `merch`, `lowStock`, `uncounted`), search & dropdown filters (`category`, `status`, `archived`), summary refresh after `/adjust` or `/sell` or `Marca com a comptat`, reorder modal, sale modal (with post-sale stock preview), variant form editing, image upload, and `409` conflict recovery.",
+      "notes": "",
+      "layer": "viewmodel",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "InventoryScreen + Inventory Modals (OrderInfo, RegisterSale, Edit/Create)",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/inventory/",
+      "decision": "create",
+      "usage": "Route `/inventari` matching mockups: `SectionHeader` + `+ NOU ARTICLE`, 5 clickable KPI filter cards (`Articles`, `Unitats de marxandatge`, `Valor de venda`, `Estoc baix`, `Per comptar`), search + `Totes les categories` / `Tots els estats`, item rows (protected thumbnail/cube placeholder, category pill, name, status badge `Estoc baix`/`Correcte`/`Per comptar`, variant quantity chips with red outline on low stock, `Preu de venda`, `Unitats venudes` & `Ingressos generats`, red `REGISTRA VENDA` or disabled `Este article no es ven`, `...` menu `Consulta la comanda`/`Edita l'article`/`Marca com a comptat`), plus centered modals `Informació de comanda`, `Registra venda`, `Edita l'article`, and `Nou article` (using real inventory fields).",
+      "notes": "",
+      "layer": "ui",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    }
+  ],
+  "structure": "Vertical slice flow:\n\n```text\nWeb /inventari (InventoryScreen → InventoryViewModel → InventoryRepository → MuixerangaApi)\n  ↕ JSON + Multipart (Bearer, board/admin only)\nServer InventoryRoutes → InventoryService (+ FileStorageService) → Inventory.sq (SQLite v0.2)\n```",
+  "sections": [
+    {
+      "title": "Filters, sorting & variant integrity",
+      "description": "`GET /api/v1/inventory-items` supports `page`, `perPage`, `category`, `lowStock` (bool), `forSale` (bool), `archived` (default `false`), `q` (search in `name`, `description`, `supplier`, `storageLocation`), and `sort` (`name`, `updatedAt`, `salePrice`; default `name`).",
+      "behavior": "Creating/updating an item validates at least 1 variant, trims variant labels, checks uniqueness (`422 validation_failed` on duplicates), and ensures `quantity >= 0`, `minStock >= 0`, and non-negative `MoneyCents` prices."
+    },
+    {
+      "title": "Atomic adjust, sales registration & concurrency",
+      "description": "Clicking `REGISTRA VENDA` opens the centered `Registra venda` modal showing item unit price, `Talla o variant` dropdown (showing current stock per variant), and a live preview box `Existències després de la venda`. Confirming sends `POST /api/v1/inventory-items/{id}/sell` and updates both the row (`Quantitats per talla`, `Unitats venudes`, `Ingressos generats`) and the KPI strip immediately. Direct stock edits or quick adjustments use `POST /adjust`.",
+      "behavior": "Server executes both `/adjust` and `/sell` inside `DatabaseAccess.writeTransaction` with guarded SQL `UPDATE` (`quantity >= :qty` / `quantity + delta >= 0`), so concurrent requests never produce negative stock and `/sell` atomically updates `units_sold` and `revenue_cents`."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "List inventory items",
+      "method": "GET",
+      "path": "/api/v1/inventory-items",
+      "notes": "`board`/`admin`. Paginated; filters `category`, `lowStock`, `forSale`, `archived`, `q`; default sort `name`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Inventory summary",
+      "method": "GET",
+      "path": "/api/v1/inventory-items/summary",
+      "notes": "`board`/`admin`. Returns `itemCount`, `merchUnits`, `merchSaleValue`, `lowStockCount`, `uncountedCount`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Get inventory item",
+      "method": "GET",
+      "path": "/api/v1/inventory-items/{id}",
+      "notes": "`board`/`admin`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Create inventory item",
+      "method": "POST",
+      "path": "/api/v1/inventory-items",
+      "notes": "`board`/`admin`. `201` + `Location`. Validates ≥1 unique variant.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Update inventory item",
+      "method": "PATCH",
+      "path": "/api/v1/inventory-items/{id}",
+      "notes": "`board`/`admin`. RFC 7386 with `version`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Archive or delete item",
+      "method": "DELETE",
+      "path": "/api/v1/inventory-items/{id}",
+      "notes": "`board`/`admin` archives (`archived = true`, `204`); `?hard=true` is `admin` only.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Adjust variant stock atomically",
+      "method": "POST",
+      "path": "/api/v1/inventory-items/{id}/adjust",
+      "notes": "`board`/`admin`. Body `{\"variant\", \"delta\"}` (no `version`). `422` if result < 0 or archived.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Register item sale atomically",
+      "method": "POST",
+      "path": "/api/v1/inventory-items/{id}/sell",
+      "notes": "`board`/`admin`. Body `{\"variant\", \"quantity\"?: 1, \"unitPrice\"?: MoneyCents}` (no `version`). Decrements variant stock (`422` if insufficient, archived, or `forSale=false`), increments `unitsSold` & `revenue`, returns updated `InventoryItem`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Upload / delete item image",
+      "method": "PUT",
+      "path": "/api/v1/inventory-items/{id}/image",
+      "notes": "Also `DELETE /api/v1/inventory-items/{id}/image`. `board`/`admin`. Protected file (max 10 MB). Upload rate limit.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    }
+  ],
+  "persistence": "Uses SQLite v0.2 `inventory_items`, `inventory_variants`, and `stored_files` via `Inventory.sq`. No new migrations.",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Inventory.sq + InventoryService",
+      "spec": "Implement SQLDelight queries and `InventoryService`: CRUD with variant validation and supplier reorder fields (`supplierContact`, `supplierReference`, `minOrderQty`, `leadTime`, `lastOrderedAt`), derived `totalQuantity`/`lowStock`, atomic `adjust`, atomic `sell` (decrementing variant + updating `unitsSold`/`revenue`), `summary`, `FileStorageService` image upload/delete, and archive/`?hard=true`.",
+      "acceptance_criteria": [
+        "Negative stock adjustment and insufficient-stock sale return `422`",
+        "`POST /sell` rejects `forSale == false` items with `422` and atomically increments `unitsSold` & `revenue`",
+        "Duplicate variant labels rejected with `422`",
+        "`summary` accurately computes all 5 fields excluding archived items"
+      ],
+      "dependencies": [],
+      "components": ["Inventory.sq", "InventoryService"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T2",
+      "title": "InventoryRoutes + OpenAPI + permission matrix tests",
+      "spec": "Mount all `/api/v1/inventory-items*` routes (including `DELETE .../image`), update `openapi.yaml`, and add `:server:test` suite covering all roles (`anonymous`, `member`, `technical`, `board`, `admin`), concurrent atomic `adjust`, and protected image access.",
+      "acceptance_criteria": [
+        "`./gradlew :server:test` passes including `OpenApiRouteSyncTest`"
+      ],
+      "dependencies": ["T1"],
+      "components": ["InventoryRoutes"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T3",
+      "title": "MuixerangaApi inventory + InventoryRepository + InventoryViewModel",
+      "spec": "Add client methods in `:core` and build repository + ViewModel in `:app:shared` handling grouped list, filters, inline `−`/`+` steppers, variant editor, and image upload/fetch.",
+      "acceptance_criteria": [
+        "`jvmTest` verifies adjust updates variant count and summary state"
+      ],
+      "dependencies": ["T2"],
+      "components": ["MuixerangaApi (inventory extension)", "InventoryRepository + InventoryViewModel"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T4",
+      "title": "InventoryScreen + Inventory Modals + navigation",
+      "spec": "Wire `/inventari` in `AppNavigation` matching reference mockups: clickable 5-card `KpiFilterStrip`, search + category/status dropdowns, item rows (protected thumbnail, category/status badges, variant quantity chips with low-stock red outline, sale price, units sold & generated revenue, `REGISTRA VENDA` / `Este article no es ven`, `...` menu with `Consulta la comanda` / `Edita l'article` / `Marca com a comptat`), and centered modals (`Informació de comanda`, `Registra venda`, `Edita l'article`, `Nou article` with real inventory fields).",
+      "acceptance_criteria": [
+        "`./gradlew :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes"
+      ],
+      "dependencies": ["T3"],
+      "components": ["InventoryScreen + Inventory Modals (OrderInfo, RegisterSale, Edit/Create)"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    }
+  ]
+}

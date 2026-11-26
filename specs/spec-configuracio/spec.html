@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configuració colla &amp; Logros (UI web)</title>
+<style>
+:root {
+  --bg: #0f1221; --panel: #181c2e; --panel-2: #1f2438; --text: #e7e9f3;
+  --muted: #9aa3c0; --accent: #6c8cff; --border: #2a3050; --code: #11152a;
+  --ok: #43c59e; --warn: #f5a623; --off: #4a5168;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+}
+.wrap { max-width: 960px; margin: 0 auto; padding: 40px 24px 80px; }
+header.spec-header { border-bottom: 1px solid var(--border); padding-bottom: 24px; margin-bottom: 32px; }
+header.spec-header h1 { margin: 0 0 8px; font-size: 34px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.chip {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
+  padding: 4px 12px; border-radius: 999px; font-size: 13px;
+}
+.chip strong { color: var(--text); }
+.chip.on { border-color: var(--ok); color: var(--ok); }
+.chip.off { opacity: .55; }
+section.block { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; margin: 18px 0; }
+section.block > h2 { margin-top: 0; font-size: 21px; border-left: 3px solid var(--accent); padding-left: 10px; }
+h3 { font-size: 17px; }
+h4 { font-size: 15px; color: var(--muted); }
+p { margin: 8px 0; }
+a { color: var(--accent); }
+code { background: var(--code); padding: 1px 6px; border-radius: 6px; font-size: 90%; }
+pre { background: var(--code); padding: 14px 16px; border-radius: 10px; overflow-x: auto; border: 1px solid var(--border); }
+pre code { background: none; padding: 0; }
+ul, ol { padding-left: 22px; }
+.images { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+figure { margin: 0; background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px; }
+figure img { width: 100%; height: auto; border-radius: 8px; display: block; }
+figcaption { color: var(--muted); font-size: 13px; margin-top: 8px; text-align: center; }
+.kind-tag { display: inline-block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  background: var(--accent); color: #0b0e1c; border-radius: 6px; padding: 1px 7px; margin-bottom: 6px; font-weight: 700; }
+.missing { color: var(--warn); font-style: italic; }
+table { width: 100%; border-collapse: collapse; margin: 6px 0; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 13px; }
+.subsection { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin: 12px 0; background: var(--panel-2); }
+.task { border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin: 14px 0; background: var(--panel-2); }
+.task-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.task-id { background: var(--accent); color: #0b0e1c; font-weight: 700; border-radius: 6px; padding: 1px 9px; font-size: 13px; }
+.task-deps { color: var(--muted); font-size: 13px; }
+.ac { margin-top: 8px; }
+.ac li { margin: 2px 0; }
+.uses { margin-top: 8px; color: var(--muted); font-size: 13px; }
+.uses .comp { color: var(--text); background: var(--code); border: 1px solid var(--border);
+  border-radius: 6px; padding: 1px 7px; margin: 0 2px; font-size: 12px; }
+.badge { display: inline-block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  font-weight: 700; border-radius: 6px; padding: 1px 8px; }
+.badge.reuse { background: var(--ok); color: #08130f; }
+.badge.modify { background: var(--warn); color: #1c1404; }
+.badge.create { background: var(--accent); color: #0b0e1c; }
+footer { color: var(--muted); font-size: 13px; margin-top: 32px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="spec-header">
+<h1>Configuració colla &amp; Logros (UI web)</h1>
+<p>Complete web UI for <code>/configuracio</code>: own colla editor (logo, photo, <code>#RRGGBB</code> clothing colors, <code>GeoPoint</code>, website, social links), guest colles CRUD (<code>board</code>/<code>admin</code>), and <strong>Achievements (Fites / Logros)</strong> CRUD accessible to <strong><code>technical</code>, <code>board</code>, and <code>admin</code></strong>. <strong>Web only</strong> (consumes backend from <code>spec-groups-achievements</code>).</p>
+<div class="meta"><span class="chip"><strong>Profile</strong> tabala</span><span class="chip"><strong>Package</strong> com.bitdesal.tabala.feature.config</span><span class="chip"><strong>Scaffold</strong> MainScaffold</span><span class="chip"><strong>Tasks</strong> 3</span><span class="chip"><strong>Endpoints</strong> 2</span><span class="chip"><strong>Components</strong> 3</span></div>
+</header>
+<section class="block"><h2>Client Scope</h2><div class="meta"><span class="chip"><strong>Preset</strong> web_only</span><span class="chip off"><strong>server</strong> no</span><span class="chip off"><strong>android</strong> no</span><span class="chip off"><strong>desktop</strong> no</span><span class="chip on"><strong>web</strong> yes</span><span class="chip off"><strong>ios</strong> no</span><span class="chip off"><strong>external public API</strong> no</span></div></section>
+<section class="block"><h2>Overview</h2><p>Fase 3 web UI slice implementing the <code>/configuracio</code> section on top of the complete <code>groups</code> and <code>achievements</code> backend built in <code>spec-groups-achievements</code>.</p>
+<p><strong>Source of truth:</strong> <code>docs/especificacion-tecnica.md</code> v1.3 §4.4, §5.9, §6.1.1, §7.4 (Configuració) · <code>docs/decisiones.md</code>.</p>
+<p><strong>Prerequisites</strong></p>
+<ul><li><code>spec-groups-achievements</code> (all <code>/api/v1/groups*</code>, <code>/api/v1/achievements*</code>, and <code>:core</code> <code>MuixerangaApi</code> extensions).</li><li><code>platform-web-shell</code> (<code>/configuracio</code> route gated by <code>config:write || achievements:write</code>).</li><li><code>spec-03-calendar</code> (optional event picker when linking an achievement to an event).</li></ul>
+<p><strong>Role-aware UI rules (<code>decisiones.md</code>)</strong></p>
+<ul><li><strong><code>board</code> / <code>admin</code></strong> (<code>config:write</code> + <code>groups:write</code> + <code>achievements:write</code>): sees all 3 subsections inside <code>/configuracio</code> — <strong>La nostra colla</strong> (edit own group), <strong>Altres colles</strong> (guest colles CRUD), and <strong>Fites / Logros</strong> (achievements CRUD).</li><li><strong><code>technical</code></strong> (<code>achievements:write</code>, without <code>groups:write</code>/<code>config:write</code>): enters <code>/configuracio</code> from the navigation bar, sees <strong>Fites / Logros</strong> with full create/edit/delete/logo actions, and either sees colla info in read-only mode or defaults directly to the Fites tab (no group write controls rendered).</li><li><strong><code>member</code></strong>: <code>/configuracio</code> is hidden from navigation and blocked by route guard.</li></ul>
+<p><strong>Acceptance (slice)</strong></p>
+<ul><li><code>./gradlew :app:shared:jvmTest :app:webApp:compileKotlinWasmJs</code> passes.</li><li><code>board</code>/<code>admin</code> can edit own colla (<code>name</code>, <code>subtitle</code>, <code>foundation</code>, <code>history</code>, <code>contact</code>, <code>location</code>, <code>#RRGGBB</code> swatches for <code>faixa</code>/<code>shirt</code>/<code>trousers</code>, <code>website</code>, <code>socialLinks</code>, logo &amp; image upload/delete) and manage guest colles (cannot delete own colla).</li><li><code>technical</code>, <code>board</code>, and <code>admin</code> can create, edit, delete, and upload logos for achievements (with optional <code>groupId</code> and <code>eventId</code> links).</li><li>Client-side validation rejects invalid <code>#RRGGBB</code> hex colors before submitting and handles <code>409 version_conflict</code> with reload prompt.</li></ul></section>
+<section class="block"><h2>Modules</h2><table><thead><tr><th>Role</th><th>Gradle module</th></tr></thead><tbody><tr><td>core</td><td><code>:core</code></td></tr><tr><td>server</td><td><code>:server</code></td></tr><tr><td>shared</td><td><code>:app:shared</code></td></tr><tr><td>webApp</td><td><code>:app:webApp</code></td></tr><tr><td>androidApp</td><td><code>:app:androidApp</code></td></tr><tr><td>desktopApp</td><td><code>:app:desktopApp</code></td></tr><tr><td>iosApp</td><td><code>None</code></td></tr></tbody></table></section>
+<section class="block"><h2>Shared UI policy</h2><p>All screens, ViewModels, and repositories live in <code>:app:shared</code> <code>commonMain</code>. <code>:app:webApp</code> hosts wasm only. Zero <code>:server</code> changes in this slice (<code>decisiones.md</code>). Android/desktop/JS out of v1 scope.</p></section>
+<section class="block"><h2>Out of scope</h2><ul><li><code>:server</code> endpoints (completed in <code>spec-groups-achievements</code>).</li><li>Global app theme editing (colla colors in <code>TabalaTheme</code> are static brand tokens).</li><li>Astro CMS controls.</li><li>Android, desktop, JS, iOS clients.</li></ul></section>
+<section class="block"><h2>Auth</h2><table><thead><tr><th>Side</th><th>Rule</th></tr></thead><tbody><tr><td>client</td><td>Bearer JWT via `SessionManager`. Route `/configuracio` accessible when `config:write` OR `achievements:write` is present; group edit actions gated on `groups:write`, achievement edit actions gated on `achievements:write`.</td></tr><tr><td>server</td><td>Consumed only (`spec-groups-achievements`).</td></tr></tbody></table></section>
+<section class="block"><h2>Data Model Refs</h2><ul><li><code>docs/especificacion-tecnica.md §5.9, §6.1.1, §7.4 (Configuració)</code></li><li><code>docs/decisiones.md</code></li><li><code>specs/spec-groups-achievements</code></li></ul></section>
+<section class="block"><h2>Structure</h2><p>Web-only feature slice:</p>
+<pre><code>Web /configuracio (ConfiguracioScreen)
+  ├─ Tab 1: La nostra colla  (editable by board/admin; read-only or hidden for technical)
+  ├─ Tab 2: Altres colles    (CRUD by board/admin)
+  └─ Tab 3: Fites / Logros   (CRUD by technical, board, admin)
+        ↓
+ConfigViewModel → ConfigRepository → :core MuixerangaApi (spec-groups-achievements)</code></pre></section>
+<section class="block"><h2>Components</h2><table><thead><tr><th>Component</th><th>Decision</th><th>Layer</th><th>Module</th><th>Source set</th><th>Location</th><th>Used for</th><th>Clients</th><th>Notes</th></tr></thead><tbody><tr><td><code>ConfigRepository</code></td><td><span class="badge create">CREATE</span></td><td>repository</td><td><code>:app:shared</code></td><td><code>commonMain</code></td><td><code>app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/config/ConfigRepository.kt</code></td><td>Wraps `MuixerangaApi` groups &amp; achievements methods (including logo/image multipart upload &amp; delete) and optional events lookup for achievement linking.</td><td>web</td><td>Wired in Koin `SharedModules`.</td></tr><tr><td><code>ConfigViewModel</code></td><td><span class="badge create">CREATE</span></td><td>viewmodel</td><td><code>:app:shared</code></td><td><code>commonMain</code></td><td><code>app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/config/ConfigViewModel.kt</code></td><td>Exposes `StateFlow&lt;ConfigUiState&gt;` managing active tab (`La nostra colla`, `Altres colles`, `Fites`), role capability flags (`canEditGroups`, `canEditAchievements`), client-side `#RRGGBB` / URL validation, media uploads, and `409` conflict reload.</td><td>web</td><td>Defaults initial tab to `Fites` when `!canEditGroups &amp;&amp; canEditAchievements` (`technical`).</td></tr><tr><td><code>ConfiguracioScreen + GroupFormDialog + AchievementFormDialog</code></td><td><span class="badge create">CREATE</span></td><td>ui</td><td><code>:app:shared</code></td><td><code>commonMain</code></td><td><code>app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/config/</code></td><td>Route `/configuracio`: `KpiFilterStrip` (colles, fites), tabbed layout (`La nostra colla`, `Altres colles`, `Fites`), hex color swatch list editor (`faixa`, `shirt`, `trousers`), logo/image upload &amp; remove controls, `GeoPoint` coordinates input, `socialLinks` form, guest colles list (own group delete disabled), and achievements list + create/edit/delete dialog with optional `groupId` &amp; `eventId` selectors.</td><td>web</td><td></td></tr></tbody></table></section>
+<section class="block"><h2>Sections</h2><div class="subsection"><h3>Hex color swatch editor (`faixa`, `shirt`, `trousers`)</h3><h4>Contents</h4><p>Reusable Compose component showing visual color chips for each <code>#RRGGBB</code> entry with add/remove controls and instant validation against <code>:core</code> hex validator.</p><h4>Behavior</h4><p>Validates <code>#RRGGBB</code> format on input and normalizes uppercase hex before sending <code>PatchField</code> updates.</p></div><div class="subsection"><h3>Role-based tabs (`technical` vs `board`/`admin`)</h3><h4>Contents</h4><p><code>ConfigViewModel</code> derives <code>canEditGroups = Permission.GROUPS_WRITE in permissions</code> and <code>canEditAchievements = Permission.ACHIEVEMENTS_WRITE in permissions</code>.</p><h4>Behavior</h4><p>For <code>technical</code> (<code>canEditAchievements &amp;&amp; !canEditGroups</code>), opens directly on <code>Fites</code> and hides all group create/edit/delete/upload actions. For <code>board</code>/<code>admin</code>, opens on <code>La nostra colla</code> with full access to all 3 tabs.</p></div></section>
+<section class="block"><h2>Endpoints</h2><table><thead><tr><th>Name</th><th>Method</th><th>Path</th><th>Implemented on</th><th>Consumed by</th><th>Auth</th><th>Notes</th></tr></thead><tbody><tr><td>Groups CRUD &amp; media (consumed)</td><td><code>GET</code></td><td><code>/api/v1/groups</code></td><td>server</td><td>web</td><td>bearer</td><td>Consumes `GET/POST/PATCH/DELETE /api/v1/groups*` and `PUT/DELETE .../logo|image` implemented in `spec-groups-achievements`.</td></tr><tr><td>Achievements CRUD &amp; logo (consumed)</td><td><code>GET</code></td><td><code>/api/v1/achievements</code></td><td>server</td><td>web</td><td>bearer</td><td>Consumes `GET/POST/PATCH/DELETE /api/v1/achievements*` and `PUT/DELETE .../logo` implemented in `spec-groups-achievements`.</td></tr></tbody></table></section>
+<section class="block"><h2>Persistence</h2><p>No client persistence; all mutations hit <code>:server</code> APIs from <code>spec-groups-achievements</code>.</p></section>
+<section class="block"><h2>Incremental Tasks</h2><div class="task"><div class="task-head"><span class="task-id">T1</span><h3>ConfigRepository + ConfigViewModel</h3><span class="task-deps">no dependencies</span></div><p class="uses">target: shared · module: :app:shared · clients: web</p><p>Create <code>ConfigRepository</code> (wired in Koin) and <code>ConfigViewModel</code> managing the 3 tabs, role flags (<code>technical</code> defaults to <code>Fites</code> with no group write actions), <code>#RRGGBB</code> color list validation, logo/image uploads, and <code>409 version_conflict</code> reload.</p><p class="uses">Components: <span class="comp">ConfigRepository</span><span class="comp">ConfigViewModel</span></p><div class="ac"><h4>Acceptance criteria</h4><ul><li><code>jvmTest</code> verifies <code>technical</code> defaults to <code>Fites</code> with <code>canEditGroups=false, canEditAchievements=true</code></li><li><code>jvmTest</code> verifies invalid hex color blocks submit and surfaces field error</li><li><code>jvmTest</code> verifies <code>board</code> can save own group and create/delete guest groups</li></ul></div></div><div class="task"><div class="task-head"><span class="task-id">T2</span><h3>ConfiguracioScreen (own colla + guest colles + color swatches)</h3><span class="task-deps">depends on: T1</span></div><p class="uses">target: shared · module: :app:shared · clients: web</p><p>Implement <code>ConfiguracioScreen</code> and <code>GroupFormDialog</code> in Valencian Material 3: <code>KpiFilterStrip</code>, own colla form (logo, photo, <code>#RRGGBB</code> swatch lists for <code>faixa</code>/<code>shirt</code>/<code>trousers</code>, <code>GeoPoint</code>, <code>website</code>, <code>socialLinks</code>, history) and guest colles CRUD table/cards.</p><p class="uses">Components: <span class="comp">ConfiguracioScreen + GroupFormDialog + AchievementFormDialog</span></p><div class="ac"><h4>Acceptance criteria</h4><ul><li>Own group delete button is never rendered</li><li>Logo &amp; image upload/delete work via file picker and update previews</li></ul></div></div><div class="task"><div class="task-head"><span class="task-id">T3</span><h3>Achievements subsection + AppNavigation wiring</h3><span class="task-deps">depends on: T2</span></div><p class="uses">target: shared · module: :app:shared · clients: web</p><p>Implement <code>Fites</code> tab and <code>AchievementFormDialog</code> (title, subtitle, year, optional <code>groupId</code> &amp; <code>eventId</code> selectors, logo upload/delete) and replace the <code>/configuracio</code> placeholder in <code>AppNavigation</code>.</p><p class="uses">Components: <span class="comp">ConfiguracioScreen + GroupFormDialog + AchievementFormDialog</span></p><div class="ac"><h4>Acceptance criteria</h4><ul><li><code>./gradlew :app:shared:jvmTest :app:webApp:compileKotlinWasmJs</code> passes</li><li><code>technical</code>, <code>board</code>, and <code>admin</code> can manage achievements from <code>/configuracio</code></li></ul></div></div></section>
+<footer>Generated by bitdesal-create-kmp-spec.</footer>
+</div>
+</body>
+</html>

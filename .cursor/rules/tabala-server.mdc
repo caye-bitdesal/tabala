@@ -6,12 +6,12 @@ alwaysApply: false
 
 # Server (`:server`)
 
-- JVM Ktor only; configure forwarded headers behind Caddy (`X-Forwarded-*`).
-- Verify Firebase ID tokens; map to `User` + role; **401/403** for missing/insufficient auth.
+- JVM Ktor 3.x only; trust `X-Forwarded-*` headers behind Caddy **only** when the peer is `127.0.0.1`.
+- Verify Google OIDC ID tokens on `/api/v1/auth/google` and issue own HS256 JWT + rotating refresh sessions (**no Firebase**, no password storage); **401/403** for missing/insufficient auth.
 - Public routes: only what RGPD allows (consent, no minors public, no internal notes/amounts).
-- SQLite: open via `openDatabase()` (WAL + foreign keys on every connection); one-sided relations persisted per data model.
-- Schema changes: add a new `server/src/main/sqldelight/migrations/V<n>__<name>.sqm` (never edit an applied one); Flyway applies the generated `.sql` at startup. Prefer additive changes so rollbacks stay possible.
-- Validate input at boundaries; consistent JSON error bodies and HTTP status codes.
-- No password storage; no blocking work on the Netty event loop — use appropriate dispatchers.
+- SQLite: open via `openDatabase()` (WAL + foreign keys + `busy_timeout=5000`, single-writer pool + reader connections); one-sided relations persisted per model v0.2.
+- Schema changes: replace the pre-production v0.1 `V1__initial_schema.sqm` with v0.2 (`V1` + `V2__seed.sqm`) per `docs/decisiones.md`; once deployed to production, never edit applied migrations — add a new `V<n>__<name>.sqm` instead.
+- Validate input at boundaries using `:core` validators; consistent JSON error bodies (§6.3) and HTTP status codes.
+- No blocking work on the Netty event loop — use appropriate dispatchers (`Dispatchers.IO` for SQLite/files/image resize).
 - Koin modules for routes/services/repositories; share DTOs from `:core`.
-- Tests in `:server:test` for auth matrix, public filtering, and critical SQL paths.
+- Tests in `:server:test` for auth matrix, public filtering, OpenAPI route sync, and critical SQL paths.

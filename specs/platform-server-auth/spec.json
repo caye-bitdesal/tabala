@@ -1,0 +1,396 @@
+{
+  "feature_name": "Platform server auth (Google + JWT + sessions)",
+  "feature_slug": "platform-server-auth",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala",
+  "scaffold": "",
+  "summary": "`:server` authentication per §4–§6.6: verify Google OIDC ID token, issue HS256 JWT (15 min) + rotating refresh token (30 d), `mux_refresh` cookie for web (with local HTTP dev handling), bootstrap admin, `GET/PATCH /me` (with self-visible `emergencyContact`/`isMinor`/`notes`/`guardians`), session management, and `consent_required` guard. **Server only**.",
+  "overview": "Third platform slice after **infra**, **schema v0.2**, and **`:core` contract**. Wires Ktor `Authentication` + routes under `/api/v1/auth/*` and `/api/v1/me*` using SQLite v0.2 tables (`platform-schema-v02`) and `:core` DTOs (`platform-core-contract`).\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §4.1–4.5, §5.4, §6.6–6.7, §6.10 · `docs/decisiones.md` (Google OIDC, no Firebase).\n\n**Prerequisites**\n- `platform-server-infra`: `EnvConfig`, `DatabaseAccess`, Koin, CORS+credentials, `TrustedProxy`, `RequestUserIdKey`, `ErrorHandling`.\n- `platform-schema-v02`: `google_identities`, `sessions`, `refresh_tokens`, `user_accounts`, `users`, `user_guardians`.\n- `platform-core-contract`: auth + `UserSelf`/`UserPatchMe`/`MeResponse` DTOs, `PatchField`, `permissionsForRole`.\n\n**Acceptance (slice)**\n- `./gradlew :server:test` green including full auth integration tests with a local test RSA JWKS server (`GOOGLE_JWKS_URL`).\n- `POST /api/v1/auth/google` (native) → `200` + `accessToken` + `refreshToken`; `POST /api/v1/auth/refresh` rotates refresh token; reusing a previously used refresh token → `401` and revokes the entire session.\n- `POST /api/v1/auth/google` (web) sets `Set-Cookie: mux_refresh` (`HttpOnly; SameSite=Strict; Path=/api/v1/auth`; `Secure` enabled when `PUBLIC_BASE_URL` starts with `https://`, omitted on local `http://`; `Domain` set only when `COOKIE_DOMAIN` is non-blank).\n- `POST /api/v1/auth/logout` accepts either Bearer or `mux_refresh` cookie (idempotent) so an expired JWT still revokes the session and clears the cookie.\n- `GET /api/v1/me` returns `UserSelf` (including `emergencyContact`, `isMinor`, `notes`, and `guardians` when minor) + `permissions` list.\n- `PATCH /api/v1/me` requires `version` (`409 version_conflict` on mismatch), ignores unknown fields (§6.4), rejects known non-editable `User` fields with `403 field_not_editable`, and persists allowed §5.4 fields.\n- When `consent.dataProcessing == false`, any non-allowlisted authenticated route returns `403 consent_required`; allowlist includes `/me`, `PATCH /me`, `/me/export`, `/me/sessions*`, `/auth/logout`, `/auth/logout-all`.\n- `BOOTSTRAP_ADMIN_EMAIL` creates one `invited` admin user on empty DB (idempotent).\n- No Google ID token, `googleSub`, or raw refresh token ever appears in responses (except native `refreshToken`) or logs.",
+  "client_scope": {
+    "preset": "server_only",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": false,
+    "ios": false,
+    "external_public_api": false
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "webApp": ":app:webApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "No UI in this slice. Web GIS integration lives in `platform-web-shell`.",
+  "out_of_scope": "- Compose / GIS / wasm webapp (`platform-web-shell`).\n- `GET /me/export` and consent setup UI (`platform-me-rgpd`).\n- `PUT/DELETE /me/avatar` (`platform-files`).\n- User and account administration routes (`spec-05-members`).\n- Rate limiting for `/public/*`, general private routes, and uploads (`platform-rate-limits` unifies with auth limits).\n- Firebase or personal API tokens (§4.7).",
+  "external_systems": [
+    {
+      "name": "Google OAuth JWKS",
+      "role": "Fetch RS256 public keys from `GOOGLE_JWKS_URL` (cached per `Cache-Control`); verify `iss`, `aud`, `exp`, `iat`, `email_verified`, optional `nonce`."
+    }
+  ],
+  "auth": {
+    "client": "N/A in this slice.",
+    "server": "Google ID token verify → invite-only account lookup/link → session + HS256 JWT (`iss`, `sub`, `role`, `sid`). Refresh cookie (`web`) or JSON body (`native`). Bearer + active session/account check (cache ≤ 30 s, immediate local invalidation) on protected routes."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §4.1–4.5",
+    "docs/especificacion-tecnica.md §5.4",
+    "docs/especificacion-tecnica.md §6.1.1, §6.4–6.7, §6.10",
+    "docs/decisiones.md",
+    "specs/platform-schema-v02",
+    "specs/platform-core-contract"
+  ],
+  "images": [],
+  "components": [
+    {
+      "name": "Application.module",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/Application.kt",
+      "decision": "modify",
+      "usage": "Install `Authentication` (JWT Bearer), `ConsentRequiredPlugin`, register `authRoutes()` and `meRoutes()` under `/api/v1`, run `BootstrapAdmin`, and launch 24 h session purge coroutine.",
+      "notes": "Populate `RequestUserIdKey` on authenticated calls for `CallLogging`.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "GoogleIdTokenService",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/auth/GoogleIdTokenService.kt",
+      "decision": "create",
+      "usage": "Interface + JWKS RS256 verifier checking signature, `iss`, `aud ∈ GOOGLE_CLIENT_IDS`, `exp`/`iat` (60 s leeway), `email_verified=true`, and optional `nonce`.",
+      "notes": "Test suite uses real RSA keys served from a local test JWKS endpoint via `GOOGLE_JWKS_URL` (§10.1.1).",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "JwtService",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/auth/JwtService.kt",
+      "decision": "create",
+      "usage": "Issue HS256 access tokens (15 min; `iss`, `sub=userId`, `role`, `sid`, `iat`, `exp`) and verify with 30 s leeway + `JWT_SECRET_PREVIOUS` rotation fallback.",
+      "notes": "`iss` defaults to `PUBLIC_BASE_URL` (e.g. `https://api.muixerangadelx.com`).",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "SessionService",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/auth/SessionService.kt",
+      "decision": "create",
+      "usage": "Create sessions + 32-byte base64url refresh tokens (store SHA-256 hash only); atomic rotation with reuse detection (revokes whole session); verify account `active` on refresh; TTL ≤ 30 s status cache with immediate local invalidation on logout/revoke/disable; 24 h purge of expired/old revoked sessions.",
+      "notes": "Uses `DatabaseAccess.writeTransaction`.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "AccountLinkingService",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/auth/AccountLinkingService.kt",
+      "decision": "create",
+      "usage": "§4.1 invite-only lookup in one transaction: find by `google_sub`, else by lowercase `login_email` with `status = invited` and no `google_identities` row → link `google_sub` + set `active`; else `403 not_invited` / `403 account_disabled`; update `last_login_at`.",
+      "notes": "Never mutates `login_email` if the user's Google email changed.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "BootstrapAdmin",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/auth/BootstrapAdmin.kt",
+      "decision": "create",
+      "usage": "On startup after Flyway: if zero `admin` rows exist in `user_accounts` and `BOOTSTRAP_ADMIN_EMAIL` is set, insert minimal `User` (`name` = email local-part or «Administració») + `invited` `admin` account.",
+      "notes": "Idempotent on restart.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "UserSelfMapper",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/mapping/UserSelfMapper.kt",
+      "decision": "create",
+      "usage": "Map DB user + account + guardians + derived `isMinor` + `orgRoles` → `:core` `UserSelf` and `MeResponse`.",
+      "notes": "Includes `emergencyContact`, `isMinor`, `notes`, and `guardians` (when minor) per `decisiones.md`. Excludes `birthDate`, `documentId`, `memberNumber`, `leftAt`, `googleSub`.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "ConsentRequiredPlugin",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/auth/ConsentRequiredPlugin.kt",
+      "decision": "create",
+      "usage": "Route-scoped plugin blocking authenticated calls with `403 consent_required` while `consent.dataProcessing == false`, except the explicit allowlist.",
+      "notes": "Also provide role-checking helper `requireRole(...)` for feature slices.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "AuthRoutes & MeRoutes",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/routes/",
+      "decision": "create",
+      "usage": "Implement §6.6 auth endpoints (with Origin CSRF check and auth rate limits) + `/me` and `/me/sessions` endpoints.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "Auth.sq",
+      "location": "server/src/main/sqldelight/com/bitdesal/tabala/db/Auth.sq",
+      "decision": "create",
+      "usage": "SQLDelight queries for `user_accounts`, `google_identities`, `sessions`, `refresh_tokens`, `users` self read/update (with optimistic `version` check), and `user_guardians`.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    }
+  ],
+  "structure": "Authentication request lifecycle:\n\n```text\nPOST /api/v1/auth/google\n  → Origin CSRF check (if Origin present, must be ∈ CORS_ORIGINS)\n  → Auth rate limit (20 / 15 min per resolved client IP)\n  → GoogleIdTokenService.verify(idToken, nonce)\n  → AccountLinkingService.linkOrResolve(sub, email) [write tx]\n  → SessionService.createSession(userId, clientType, userAgent) [write tx]\n  → JwtService.issue(userId, role, sid)\n  → Response: AuthTokenResponse + Set-Cookie mux_refresh (web) | refreshToken (native)\n\nProtected request (Authorization: Bearer <jwt>)\n  → JwtService.verify → AuthPrincipal(userId, role, sid)\n  → SessionService.assertActive(sid, userId) [≤30s cache + immediate local invalidation]\n  → call.attributes.put(RequestUserIdKey, userId)\n  → ConsentRequiredPlugin (unless route is allowlisted)\n  → Route handler\n```",
+  "sections": [
+    {
+      "title": "Cookie policy (production vs local development)",
+      "description": "Cookie name: `mux_refresh`, `HttpOnly`, `SameSite=Strict`, `Path=/api/v1/auth`, `Max-Age=2592000` (30 days).",
+      "behavior": "Set `Secure` when `PUBLIC_BASE_URL` starts with `https://`; omit `Secure` on local `http://` dev so browsers store the cookie. Set `Domain=<COOKIE_DOMAIN>` only when `COOKIE_DOMAIN` is configured (omit in local dev → host-only cookie on `localhost`). On logout, expire cookie with matching attributes (`Max-Age=0`)."
+    },
+    {
+      "title": "PATCH /me field classification (§5.4 & §6.4)",
+      "description": "Editable self fields: `nickname`, `phoneNumber`, `aboutMe`, `address`, `emergencyContact`, `sizes`, `consent.dataProcessing` (monotonic `false -> true`), `consent.publicProfile`, `consent.imageRights`, `consent.whatsapp`, `consent.signedAt`, `consent.signedBy`, plus required `version`.",
+      "behavior": "Inspect incoming raw `JsonObject` before decoding `UserPatchMe`: unknown JSON keys are **ignored** (§6.4); known non-editable `User` keys (`name`, `lastNames`, `birthDate`, `documentId`, `email`, `status`, `membershipType`, `memberNumber`, `joinedAt`, `leftAt`, `heightCm`, `guardians`, `account`, `notes`, `groupId`) return `403 field_not_editable`. Version mismatch returns `409 version_conflict` with `error.current`."
+    },
+    {
+      "title": "consent_required allowlist (`decisiones.md`)",
+      "description": "While `consent.dataProcessing == false`, the user can access only: `GET /api/v1/me`, `PATCH /api/v1/me`, `GET /api/v1/me/export`, `GET /api/v1/me/sessions`, `DELETE /api/v1/me/sessions/{id}`, `POST /api/v1/auth/logout`, `POST /api/v1/auth/logout-all`.",
+      "behavior": "Every other authenticated `/api/v1/*` route returns `403 consent_required`. Tests verify this by registering a test-only probe route inside `testApplication` (never shipped in production routing)."
+    },
+    {
+      "title": "Logout without active Bearer token",
+      "description": "`POST /api/v1/auth/logout` (§6.6) is callable even if the 15-minute access token has already expired.",
+      "behavior": "Verify `Origin` header if present. If a valid Bearer token is present, revoke its `sid`; else if `mux_refresh` cookie (or body `refreshToken`) matches a session, revoke that session; always clear `mux_refresh` cookie and respond `204`."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "Auth config",
+      "method": "GET",
+      "path": "/api/v1/auth/config",
+      "notes": "Public. Returns first entry of `GOOGLE_CLIENT_IDS` as `googleClientId`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "none"
+    },
+    {
+      "name": "Google login",
+      "method": "POST",
+      "path": "/api/v1/auth/google",
+      "notes": "`GoogleAuthRequest` → `AuthTokenResponse`. Origin check + rate limit 20 / 15 min per IP.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "none"
+    },
+    {
+      "name": "Refresh session",
+      "method": "POST",
+      "path": "/api/v1/auth/refresh",
+      "notes": "Cookie (`web`) or body `refreshToken` (`native`). Rotates token; reuse revokes session; checks account `active`. Origin check + rate limit 60 / min per IP.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "refresh"
+    },
+    {
+      "name": "Logout current session",
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "notes": "Accepts Bearer or `mux_refresh` cookie (idempotent `204`); clears cookie; Origin check.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "optional-bearer-or-cookie"
+    },
+    {
+      "name": "Logout all sessions",
+      "method": "POST",
+      "path": "/api/v1/auth/logout-all",
+      "notes": "Revokes all sessions for current user, invalidates local cache, clears cookie (`204`).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Current user",
+      "method": "GET",
+      "path": "/api/v1/me",
+      "notes": "Returns `MeResponse` (`UserSelf` incl. `emergencyContact`, `isMinor`, `notes`, `guardians` if minor + `permissions`).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Update own profile",
+      "method": "PATCH",
+      "path": "/api/v1/me",
+      "notes": "RFC 7386 Merge Patch with required `version`. Only §5.4 editable self fields.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "List own sessions",
+      "method": "GET",
+      "path": "/api/v1/me/sessions",
+      "notes": "Active sessions (`id`, `createdAt`, `lastUsedAt`, `clientType`, `userAgent`, `current`). Never refresh hashes.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Revoke own session",
+      "method": "DELETE",
+      "path": "/api/v1/me/sessions/{id}",
+      "notes": "Revokes session owned by current user (`404` if not owned); immediate cache invalidation.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    }
+  ],
+  "persistence": "SQLite v0.2 via SQLDelight (`Auth.sq`) and `DatabaseAccess.writeTransaction`. Refresh tokens are 32 cryptographically random bytes encoded base64url; only SHA-256 hex/base64 hash is persisted.",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Gradle: Ktor auth-jwt + JWKS dependencies",
+      "spec": "Add `ktor-server-auth`, `ktor-server-auth-jwt`, and `com.auth0:jwks-rsa` / `java-jwt` to `gradle/libs.versions.toml` and `server/build.gradle.kts`. No Firebase.",
+      "acceptance_criteria": [
+        "`./gradlew :server:compileKotlin` succeeds"
+      ],
+      "dependencies": [],
+      "components": [],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T2",
+      "title": "SQLDelight Auth.sq queries",
+      "spec": "Add `Auth.sq` queries: lookup account by `google_sub`, lookup invited account by `login_email`, insert `google_identities`, activate account + update `last_login_at`, CRUD `sessions` & `refresh_tokens`, purge expired/old revoked sessions, read user + guardians + orgRoles for `/me`, and optimistic-locked update of self fields.",
+      "acceptance_criteria": [
+        "Generated `TabalaDatabase` compiles and unit test exercises session + refresh hash persistence"
+      ],
+      "dependencies": ["T1"],
+      "components": ["Auth.sq"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T3",
+      "title": "GoogleIdTokenService (JWKS RS256)",
+      "spec": "Implement JWKS key provider (respecting `Cache-Control`) pointing to `EnvConfig.googleJwksUrl`. Validate RS256 signature, `iss`, `aud`, `exp`/`iat` (60 s margin), `email_verified=true`, and optional `nonce`. Map all failures to `401 invalid_google_token`.",
+      "acceptance_criteria": [
+        "Tests with local RSA JWKS test server reject bad signature, expired token, wrong `aud`, wrong `iss`, `email_verified=false`, and mismatched `nonce`"
+      ],
+      "dependencies": ["T1"],
+      "components": ["GoogleIdTokenService"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T4",
+      "title": "JwtService + Ktor Authentication plugin",
+      "spec": "Issue 15-min HS256 JWT (`iss`, `sub`, `role`, `sid`, `iat`, `exp`) and verify with 30 s leeway plus `JWT_SECRET_PREVIOUS` fallback. Install Ktor `Authentication` attaching `AuthPrincipal` and setting `RequestUserIdKey`.",
+      "acceptance_criteria": [
+        "Expired or tampered JWT returns `401 unauthenticated`",
+        "Token signed with `JWT_SECRET_PREVIOUS` still validates during key rotation"
+      ],
+      "dependencies": ["T1"],
+      "components": ["JwtService"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T5",
+      "title": "SessionService (rotation, reuse revoke, cache, purge)",
+      "spec": "Implement session creation, atomic refresh rotation (verify account still `active`, detect reuse of an already-used token and revoke entire session → `401 session_revoked`), sliding 30 d expiry, `userAgent` truncation to 200 chars, in-memory `sid`/`userId` status cache (TTL ≤ 30 s with immediate invalidation API for logout/admin actions), and 24 h purge coroutine.",
+      "acceptance_criteria": [
+        "Double use of same refresh token revokes session and returns `401`",
+        "Refresh fails if account status became `disabled`",
+        "Purge deletes sessions expired or revoked > 30 days ago"
+      ],
+      "dependencies": ["T2"],
+      "components": ["SessionService"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T6",
+      "title": "AccountLinkingService + BootstrapAdmin",
+      "spec": "Implement §4.1 invite-only lookup/link transaction (`not_invited`, `account_disabled`, first-login `invited -> active`, ignore subsequent Google email changes) and idempotent `BootstrapAdmin` on startup.",
+      "acceptance_criteria": [
+        "Invited email links `googleSub` and becomes `active`; subsequent login matches by `googleSub` even if Google email changes",
+        "Non-invited returns `403 not_invited`; disabled returns `403 account_disabled`",
+        "`BOOTSTRAP_ADMIN_EMAIL` creates one invited admin on empty DB and is idempotent"
+      ],
+      "dependencies": ["T2", "T3"],
+      "components": ["AccountLinkingService", "BootstrapAdmin"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T7",
+      "title": "AuthRoutes + cookies + CSRF Origin check + auth rate limits",
+      "spec": "Implement `GET /auth/config`, `POST /auth/google`, `POST /auth/refresh`, `POST /auth/logout` (Bearer or cookie, idempotent), `POST /auth/logout-all`. Enforce `Origin ∈ CORS_ORIGINS` on auth POSTs when `Origin` is present (`403 forbidden`), cookie attributes for HTTPS vs local HTTP, and in-memory IP rate limits (`20/15min` on `/auth/google`, `60/min` on `/auth/refresh`) using `TrustedProxy.resolvedClientIp()`.",
+      "acceptance_criteria": [
+        "Web login sets `HttpOnly`, `SameSite=Strict`, `Path=/api/v1/auth` (+ `Secure` on https)",
+        "Disallowed `Origin` on `/auth/refresh` returns `403`",
+        "Logout succeeds even after Bearer token expiry using cookie"
+      ],
+      "dependencies": ["T4", "T5", "T6"],
+      "components": ["AuthRoutes & MeRoutes"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T8",
+      "title": "UserSelfMapper, MeRoutes, and ConsentRequiredPlugin",
+      "spec": "Implement `UserSelfMapper` (returning `emergencyContact`, `isMinor`, `notes`, `guardians` if minor, plus `permissions`), `GET/PATCH /me` (ignoring unknown keys, `403 field_not_editable` for known non-editable `User` fields, `409 version_conflict` with `error.current`), `GET/DELETE /me/sessions`, and `ConsentRequiredPlugin` with full allowlist (including `/me/export`).",
+      "acceptance_criteria": [
+        "Unknown JSON property on `PATCH /me` is ignored (200)",
+        "Known non-editable field (e.g. `status` or `memberNumber`) on `PATCH /me` returns `403 field_not_editable`",
+        "`consent.dataProcessing=false` blocks non-allowlisted test route with `403 consent_required` while allowing `/me` and `/me/export`"
+      ],
+      "dependencies": ["T2", "T4", "T7"],
+      "components": ["UserSelfMapper", "ConsentRequiredPlugin", "AuthRoutes & MeRoutes"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T9",
+      "title": "Koin wiring + Auth integration test suite (§10.1.3)",
+      "spec": "Register auth services in `ServerModules`, launch session purge in `Application.module`, and write end-to-end `testApplication` tests covering all §10.1.3 scenarios plus log-capture assertion confirming no Google ID token, `googleSub`, or refresh token is logged.",
+      "acceptance_criteria": [
+        "`./gradlew :server:test` passes",
+        "Zero secrets/tokens in captured log output"
+      ],
+      "dependencies": ["T8"],
+      "components": ["Application.module"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    }
+  ]
+}

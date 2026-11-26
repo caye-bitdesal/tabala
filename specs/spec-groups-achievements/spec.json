@@ -1,0 +1,294 @@
+{
+  "feature_name": "Groups & Achievements backend + Public API",
+  "feature_slug": "spec-groups-achievements",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala",
+  "scaffold": "",
+  "summary": "Complete **`:server` backend + `:core` client methods** for `groups` (own colla + guest colles, `#RRGGBB` clothing colors, `socialLinks`, logos/images, derived `eventIds`/`achievementIds`/`memberIds`) and `achievements` (CRUD + logo), plus public `/api/v1/public/groups*` and `/api/v1/public/achievements`. **Server + `:core` only** (all web UI lives in `spec-configuracio`).",
+  "overview": "Backend slice delivering the complete private and public API for colla groups and achievements (required by Astro in Fase 2 and consumed by `spec-configuracio` UI in Fase 3).\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §4.4, §5.9, §6.1.1, §6.7 (grupos y logros), §6.8 (`/public/groups*`, `/public/achievements`), §12.2 · `docs/decisiones.md`.\n\n**Prerequisites**\n- `platform-schema-v02` (`groups` with seeded `is_own = 1` «Muixeranga d'Elx» and `groups_single_own` partial unique index, `achievements`).\n- `platform-core-contract` (`Group*`, `Achievement*`, `SocialLinks`, `GeoPoint`, `PatchField`).\n- `platform-server-auth`, `platform-files` (for `logo` and `image` uploads), `platform-openapi-deploy`.\n\n**Key business & permission rules (`decisiones.md` & §5.9)**\n- **Split write permissions (§4.4 / §6.1.1):**\n  - `groups`: read by `member`+ and anonymous (`/public/groups*`); write (`POST`/`PATCH`/`DELETE /groups*`, `logo`, `image`) by **`board` and `admin` ONLY** (`403` for `member` and `technical`).\n  - `achievements`: read by `member`+ and anonymous (`/public/achievements`); write (`POST`/`PATCH`/`DELETE /achievements*`, `logo`) by **`technical`, `board`, and `admin`** (`403` for `member`).\n- **Own group protection:** `groups_single_own` enforces at most one `isOwn = true` row (`409 duplicate` if attempting to create or patch a second `isOwn = true`). Deleting the own group (`isOwn = true`) is forbidden (`409 in_use` / `422`).\n- **Validation:** `faixa`, `shirt`, and `trousers` arrays must contain valid `#RRGGBB` hex colors (`422 validation_failed`); `website` and `socialLinks` URLs validated when non-null; `foundation` and `achievement.year` reasonable positive integers.\n- **Derived fields on `Group` (§5.9):**\n  - `eventIds`: IDs of **published** events where this group appears in `event_groups`.\n  - `achievementIds`: IDs of `achievements` belonging to this `groupId` (ordered by `year DESC, title`).\n  - `memberIds`: populated **only on the own group** (`isOwn = true`) and **only** with users satisfying `status = active && consent.publicProfile == true && !isMinor` (empty array `[]` on guest groups).\n- **Public routes (`Cache-Control: public, max-age=300`):** `GET /api/v1/public/groups`, `GET /api/v1/public/groups/{id}`, and `GET /api/v1/public/achievements` (with optional `?groupId=` and `?year=` filters). Group and achievement images/logos are public via `FileAccessPolicy`.\n\n**Acceptance (slice)**\n- `./gradlew :server:test :core:jvmTest :core:compileKotlinWasmJs` passes.\n- Permission matrix test explicitly verifies: `anonymous` (public only, 401 private), `member` (read only, 403 write on both), `technical` (`403` on `/groups` writes, **`200`/`201`/`204` on `/achievements` writes**), `board` & `admin` (full CRUD on both).\n- Creating a second `isOwn = true` group returns `409 duplicate`; deleting the own group returns `409 in_use`.\n- `Group.memberIds` never includes minors or members without `consent.publicProfile`.\n- Invalid `#RRGGBB` color values in `faixa`/`shirt`/`trousers` return `422 validation_failed`.\n- `OpenApiRouteSyncTest` passes.",
+  "client_scope": {
+    "preset": "server_only",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": false,
+    "ios": false,
+    "external_public_api": true
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "webApp": ":app:webApp",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "No Compose UI in this slice (`decisiones.md`). All `/configuracio` UI screens live in `spec-configuracio`; this slice ships the complete `:server` API and `:core` `MuixerangaApi` client methods.",
+  "out_of_scope": "- Web UI for `/configuracio` (`spec-configuracio`).\n- Global web theme customization (fixed colla branding in `TabalaTheme`).\n- Android, desktop, JS, iOS clients.",
+  "external_systems": [
+    {
+      "name": "Astro (muixerangadelx.com)",
+      "role": "Consumes `GET /api/v1/public/groups`, `/public/groups/{id}`, and `/public/achievements` anonymously."
+    }
+  ],
+  "auth": {
+    "client": "`:core` `MuixerangaApi` methods ready for `spec-configuracio`.",
+    "server": "Private read: `member`+. Write `groups`: `board`, `admin`. Write `achievements`: `technical`, `board`, `admin`. Public routes: anonymous."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §4.4, §5.9, §6.1.1, §6.7, §6.8, §12.2",
+    "docs/decisiones.md",
+    "specs/platform-files"
+  ],
+  "images": [],
+  "components": [
+    {
+      "name": "GroupsAchievements.sq",
+      "location": "server/src/main/sqldelight/com/bitdesal/tabala/db/GroupsAchievements.sq",
+      "decision": "create",
+      "usage": "SQLDelight queries for `groups`, `achievements`, derived published `event_ids`, `achievement_ids`, public adult `member_ids` (for `is_own = 1`), and optimistic-locked updates.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "GroupService + AchievementService",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/groups/",
+      "decision": "create",
+      "usage": "Full CRUD for groups (all §5.9 fields incl. `socialLinks`, `faixa`/`shirt`/`trousers` hex color validation, `website`, `location`, `logo`/`image` via `FileStorageService`, single `isOwn` guard, forbid deleting own group) and achievements (`title`, `subtitle`, `year`, `groupId`, `eventId`, `logo` via `FileStorageService`).",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "GroupAchievementRoutes",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/routes/GroupAchievementRoutes.kt",
+      "decision": "create",
+      "usage": "Mounts all 17 private + public endpoints for `/groups*` and `/achievements*` with proper role guards and `Cache-Control: public, max-age=300` on `/public/*`.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "MuixerangaApi (groups & achievements extension)",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/api/client/GroupsAchievementsApi.kt",
+      "decision": "create",
+      "usage": "Ktor Client methods for full groups CRUD + logo/image upload & delete, and full achievements CRUD + logo upload & delete.",
+      "notes": "Consumed directly by `spec-configuracio`.",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    }
+  ],
+  "structure": "Backend + `:core` contract architecture:\n\n```text\n:core GroupsAchievementsApi  (consumed later by spec-configuracio UI)\n  ↕ JSON + Multipart (Bearer)\n:server GroupAchievementRoutes → GroupService / AchievementService (+ FileStorageService) → GroupsAchievements.sq\n  ↑\nAstro public site → GET /api/v1/public/groups, /public/groups/{id}, /public/achievements\n```",
+  "sections": [
+    {
+      "title": "Derived Group relations & RGPD compliance (§5.9)",
+      "description": "Every `Group` response includes `eventIds` (only `published = 1` events linked via `event_groups`), `achievementIds`, and `memberIds`.",
+      "behavior": "`memberIds` is computed **only** when `group.isOwn == true` and strictly filters to users with `status = 'active'`, `consent_public_profile = 1`, and `!isMinor` (in `Europe/Madrid`). Guest groups always return `memberIds = []`."
+    },
+    {
+      "title": "Hex colors, social links & media uploads",
+      "description": "`faixa`, `shirt`, and `trousers` are JSON string arrays in SQLite validated against `^#[0-9A-Fa-f]{6}$`. `socialLinks` validates optional `instagram`, `facebook`, `x`, `youtube` URLs/handles.",
+      "behavior": "Logo and image endpoints (`PUT`/`DELETE`) delegate to `FileStorageService` (`max 10 MB`, JPEG/PNG/WebP, subject to `upload` rate limit) and remove replaced files from `FILES_DIR` post-commit."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "List groups",
+      "method": "GET",
+      "path": "/api/v1/groups",
+      "notes": "`member`+. Own group first, then sorted by `name`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Get group",
+      "method": "GET",
+      "path": "/api/v1/groups/{id}",
+      "notes": "`member`+. Includes derived `eventIds`, `achievementIds`, `memberIds`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Create group",
+      "method": "POST",
+      "path": "/api/v1/groups",
+      "notes": "`board`/`admin`. `201` + `Location`. `409 duplicate` if `isOwn = true` already exists.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Update group",
+      "method": "PATCH",
+      "path": "/api/v1/groups/{id}",
+      "notes": "`board`/`admin`. RFC 7386 with `version`; covers all §5.9 fields (`socialLinks`, `faixa`/`shirt`/`trousers`, `website`, `location`, etc.).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Delete group",
+      "method": "DELETE",
+      "path": "/api/v1/groups/{id}",
+      "notes": "`board`/`admin`. `204`; forbids deleting `isOwn = true` (`409 in_use`).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Upload / delete group logo",
+      "method": "PUT",
+      "path": "/api/v1/groups/{id}/logo",
+      "notes": "Also `DELETE /api/v1/groups/{id}/logo`. `board`/`admin`. Max 10 MB; upload rate limit.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Upload / delete group image",
+      "method": "PUT",
+      "path": "/api/v1/groups/{id}/image",
+      "notes": "Also `DELETE /api/v1/groups/{id}/image`. `board`/`admin`. Max 10 MB; upload rate limit.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "List achievements",
+      "method": "GET",
+      "path": "/api/v1/achievements",
+      "notes": "`member`+. Filters: `groupId`, `year`. Default sort `-year`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Get achievement",
+      "method": "GET",
+      "path": "/api/v1/achievements/{id}",
+      "notes": "`member`+.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Create achievement",
+      "method": "POST",
+      "path": "/api/v1/achievements",
+      "notes": "`technical`/`board`/`admin`. `201` + `Location`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Update achievement",
+      "method": "PATCH",
+      "path": "/api/v1/achievements/{id}",
+      "notes": "`technical`/`board`/`admin`. RFC 7386 with `version`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Delete achievement",
+      "method": "DELETE",
+      "path": "/api/v1/achievements/{id}",
+      "notes": "`technical`/`board`/`admin`. `204` + cleans logo blob.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Upload / delete achievement logo",
+      "method": "PUT",
+      "path": "/api/v1/achievements/{id}/logo",
+      "notes": "Also `DELETE /api/v1/achievements/{id}/logo`. `technical`/`board`/`admin`. Max 10 MB; upload rate limit.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Public groups list",
+      "method": "GET",
+      "path": "/api/v1/public/groups",
+      "notes": "Anonymous, `Cache-Control: public, max-age=300`.",
+      "implemented_on": "server",
+      "consumed_by": [],
+      "auth": "none"
+    },
+    {
+      "name": "Public group detail",
+      "method": "GET",
+      "path": "/api/v1/public/groups/{id}",
+      "notes": "Anonymous, `Cache-Control: public, max-age=300`.",
+      "implemented_on": "server",
+      "consumed_by": [],
+      "auth": "none"
+    },
+    {
+      "name": "Public achievements list",
+      "method": "GET",
+      "path": "/api/v1/public/achievements",
+      "notes": "Anonymous, `Cache-Control: public, max-age=300`. Optional `?groupId=`, `?year=`.",
+      "implemented_on": "server",
+      "consumed_by": [],
+      "auth": "none"
+    }
+  ],
+  "persistence": "Uses SQLite v0.2 `groups`, `achievements`, `events`, `event_groups`, `users`, and `stored_files` via `GroupsAchievements.sq`. No new migrations.",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "GroupsAchievements.sq + GroupService + AchievementService",
+      "spec": "Implement SQLDelight queries and services covering full CRUD for `groups` (all §5.9 fields, `#RRGGBB` array validation, `isOwn` uniqueness & delete protection, derived `eventIds`/`achievementIds`/`memberIds` RGPD filter, logo/image via `FileStorageService`) and `achievements` (CRUD + logo + FK validation for `groupId`/`eventId`).",
+      "acceptance_criteria": [
+        "Seeded own group («Muixeranga d'Elx») is readable and editable, cannot be deleted (`409 in_use`), and a second `isOwn=true` returns `409 duplicate`",
+        "Invalid hex colors return `422 validation_failed`",
+        "`Group.memberIds` excludes minors and non-public members"
+      ],
+      "dependencies": [],
+      "components": ["GroupsAchievements.sq", "GroupService + AchievementService"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T2",
+      "title": "GroupAchievementRoutes + OpenAPI + permission tests",
+      "spec": "Register all private & public routes (including `DELETE` for logo/image), update `openapi.yaml`, and add `:server:test` suite verifying split permissions (`technical` can write achievements but gets `403` on group writes; `board`/`admin` write both; `member` read-only) and `Cache-Control: public, max-age=300` on `/public/*`.",
+      "acceptance_criteria": [
+        "`./gradlew :server:test` passes including `OpenApiRouteSyncTest`"
+      ],
+      "dependencies": ["T1"],
+      "components": ["GroupAchievementRoutes"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T3",
+      "title": "MuixerangaApi groups & achievements extension",
+      "spec": "Add typed Ktor Client methods in `:core` for all groups & achievements CRUD and logo/image upload/delete endpoints, with `MockEngine` unit tests.",
+      "acceptance_criteria": [
+        "`./gradlew :core:jvmTest :core:compileKotlinWasmJs` passes"
+      ],
+      "dependencies": ["T2"],
+      "components": ["MuixerangaApi (groups & achievements extension)"],
+      "target": "core",
+      "module": ":core",
+      "clients_affected": ["web"]
+    }
+  ]
+}

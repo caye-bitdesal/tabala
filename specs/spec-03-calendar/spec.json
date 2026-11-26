@@ -1,0 +1,346 @@
+{
+  "feature_name": "SPEC-03 Calendari",
+  "feature_slug": "spec-03-calendar",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala.feature.calendar",
+  "scaffold": "MainScaffold",
+  "summary": "Full **Calendari**: private `/api/v1/events*` CRUD, image + gallery uploads (max 50), JSON & RFC 5545 iCalendar exports, public `/api/v1/public/events*` + `/public/events.ics` (12+2 months), `Europe/Madrid` DST-safe date filters, and web month/list/upcoming UI. **Server + web (wasmJs) + Astro public API**.",
+  "overview": "Fase 2 calendar slice supporting both internal colla scheduling (rehearsals, meetings, deadlines, performances) and the public Astro website + calendar subscription feed.\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §4.4, §5.6, §6.7 (calendario), §6.8 (`/public/events*`), §7.4 (Calendari), §10.1.7 (Madrid DST), §10.2 · `docs/decisiones.md`.\n\n**Prerequisites**\n- `platform-schema-v02` (`events`, `event_gallery`, `event_figures`, `event_groups`), `platform-core-contract`, `platform-server-auth`, `platform-files` (for image & gallery uploads), `platform-web-shell`, `platform-openapi-deploy`.\n\n**Key business & visibility rules (§5.6, §6.7, §6.8)**\n- **`category` drives `type`:** on every create/update, the server derives `type` from `category`: `assaig -> assaig`; `{actuacio, taller, diada, trobada} -> actuacio`; `{reunio, termini, altre} -> altre`.\n- **Non-publishable categories:** if `category ∈ {reunio, termini}`, server always forces `published = false`.\n- **Dates & Madrid DST (§5.1, §10.1.7):** `endDate >= date` (`422 must_be_after_date` if violated). `allDay = true` events store the UTC instant corresponding to midnight `00:00` in `Europe/Madrid` on that day. Query filters `from=YYYY-MM-DD` and `to=YYYY-MM-DD` are inclusive calendar days in `Europe/Madrid` (`[from 00:00 Madrid, (to + 1 day) 00:00 Madrid)`), handling March/October DST transitions accurately.\n- **Audience mapping:**\n  - `public` (`/public/events`, `/public/events/{id}`, `/public/events.ics`): only `published = true` (`404` otherwise); strictly `public` fields of §5.6; `Cache-Control: public, max-age=300`.\n  - `member`: sees `public` + `members` fields (`meetingTime`, `meetingPoint`, `dressCode`, `ownerId`, `attendanceOpen`, `attendanceSummary`); does **not** see `published` or `notes` (`staff`), nor `contractId`/`documentIds` (`board`).\n  - `technical`: adds `published` and `notes`; does not see `contractId`/`documentIds`.\n  - `board`/`admin`: full event including derived `contractId` and `documentIds`.\n- **Gallery limit:** max 50 images per event (`422` if exceeded); `POST /api/v1/events/{id}/gallery` accepts multiple `file` parts in one multipart call.\n- **Deletion with linked documents:** `documents.event_id` has `ON DELETE RESTRICT`; `DELETE /api/v1/events/{id}` returns `409 in_use` if documents are attached (otherwise deletes event, cascades gallery/figures/groups/attendance, and cleans stored image files from `FILES_DIR`).\n- **iCalendar (RFC 5545):** `GET /api/v1/public/events.ics` exports `published = true` events in `[now - 2 months, now + 12 months]` with `Content-Type: text/calendar; charset=utf-8`, stable `UID: event-{id}@muixerangadelx.com`, `DTSTART`/`DTEND` (for `allDay`: `VALUE=DATE` with exclusive `DTEND = date + 1 day`; for timed events: UTC `YYYYMMDDTHHMMSSZ`), `SUMMARY`, `DESCRIPTION`, `LOCATION`, `STATUS` (`CANCELLED` / `CONFIRMED` / `TENTATIVE`). Private `GET /api/v1/events/export?from=&to=&format=json|ics` uses `members` visibility.\n\n**Acceptance (slice)**\n- `./gradlew :server:test :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes.\n- Permission matrix verifies `anonymous` (public only), `member` (read private without `notes`/`contractId`, 403 write), `technical` (CRUD without `contractId`/`documentIds`), `board`/`admin` (full CRUD + derived `contractId`/`documentIds`).\n- DST boundary tests verify `from`/`to` queries on the last Sunday of March and last Sunday of October (§10.1.7).\n- `reunio`/`termini` always saved with `published = false` and return `404` on `/public/events/{id}`.\n- Web UI at `/calendari` renders month grid (Mon–Sun, today highlighted), list view, upcoming strip, category colors + legend, filters, event detail with contract link (`board`), create/edit with image/gallery upload + publish warning, JSON/ICS export download (`BrowserFileDownload`), and copyable `/public/events.ics` link.\n- `OpenApiRouteSyncTest` passes.",
+  "client_scope": {
+    "preset": "server_web",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": true,
+    "ios": false,
+    "external_public_api": true
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "webApp": ":app:webApp",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "All calendar UI, ViewModels, and repositories live in `:app:shared` `commonMain`. `:app:webApp` hosts wasm only. Android/desktop/JS out of v1 scope.",
+  "out_of_scope": "- Attendance confirmation endpoints and UI (`spec-07-attendance`; this slice only reads `attendanceSummary` counts when present).\n- Creating an event from a contract (`spec-02-contracts`, which calls `EventService`).\n- Android, desktop, JS, iOS clients.",
+  "external_systems": [
+    {
+      "name": "Astro (muixerangadelx.com) & Calendar clients",
+      "role": "Consume `GET /api/v1/public/events`, `/public/events/{id}`, and subscribe to `/public/events.ics`."
+    }
+  ],
+  "auth": {
+    "client": "Bearer JWT via `SessionManager`. Create/edit/delete/publish actions shown when `events:write` is present.",
+    "server": "Read private: `member`+ (audience-filtered). Write (`POST`/`PATCH`/`DELETE`, image, gallery): `technical`, `board`, `admin`. Public endpoints: anonymous."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §4.4, §5.6, §6.7, §6.8, §7.4, §10.1.7, §10.2",
+    "docs/decisiones.md",
+    "specs/platform-files"
+  ],
+  "images": [
+    {
+      "path": "assets/mes-desktop.png",
+      "caption": "Calendari Mes view (desktop): 4 KPI cards (Aquest mes, Pròxima actuació, Pròxim assaig, Publicats a la web), Mes/Llista toggle + category/status dropdowns, Mon–Sun colored month grid with legend + right Pròxims esdeveniments card with Veure tots link",
+      "kind": "desktop"
+    },
+    {
+      "path": "assets/llista-desktop.png",
+      "caption": "Calendari Llista view (desktop): date-grouped event rows showing time (or Tot el dia), title, location, category chip, optional Públic badge, and chevron",
+      "kind": "desktop"
+    },
+    {
+      "path": "assets/proxims-esdeveniments-desktop.png",
+      "caption": "Tots els pròxims esdeveniments right-side drawer (opened via Veure tots): search input, category filter chips (Totes, Assaig, Actuació, Taller, Reunió, Termini), and date-badged event list",
+      "kind": "drawer"
+    },
+    {
+      "path": "assets/edita-esdeveniment-desktop.png",
+      "caption": "Edita l'esdeveniment centered modal: Informació bàsica (Nom, Tipus, Categoria, Estat) and Data i hora (Tot el dia switch, start/end date & time) with sticky Cancel·la / DESA footer",
+      "kind": "modal"
+    },
+    {
+      "path": "assets/llista-mobile.png",
+      "caption": "Calendari Llista view (mobile): compact red top bar, horizontal scrollable KPI cards, full-width Mes/Llista segmented control, filters, date-grouped cards, red + FAB, and bottom navigation bar",
+      "kind": "mobile"
+    },
+    {
+      "path": "assets/nou-esdeveniment-mobile.png",
+      "caption": "Nou esdeveniment full-screen sheet (mobile): CREAR header + close X, scrollable Informació bàsica / Data i hora cards, sticky Cancel·la / CREA footer",
+      "kind": "mobile"
+    }
+  ],
+  "components": [
+    {
+      "name": "Events.sq",
+      "location": "server/src/main/sqldelight/com/bitdesal/tabala/db/Events.sq",
+      "decision": "create",
+      "usage": "SQLDelight queries for events, `event_gallery`, `event_figures`, `event_groups`, derived `contract_id`, `document_ids`, `attendance` status counts, Madrid-range filtering, and version-checked updates.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "EventService + IcsGenerator",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/events/",
+      "decision": "create",
+      "usage": "CRUD events, category→type normalization, `published` enforcement, Madrid `ZoneId` range conversion, image & gallery (max 50) management via `FileStorageService`, `409 in_use` when documents exist, and RFC 5545 `.ics` serializer (proper line folding + escaping).",
+      "notes": "Reused by `ContractService.createEvent` (`spec-02-contracts`).",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "EventMapper",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/mapping/EventMapper.kt",
+      "decision": "create",
+      "usage": "Audience mapping: `public`, `members`, `staff`, `board`.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "EventRoutes",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/routes/EventRoutes.kt",
+      "decision": "create",
+      "usage": "Registers all 12 private + public event routes, export endpoints, and multipart image/gallery routes.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "MuixerangaApi (events extension)",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/api/client/EventsApi.kt",
+      "decision": "create",
+      "usage": "Client methods for events CRUD, image/gallery upload & delete, and `exportEvents(from, to, format)` returning raw bytes.",
+      "notes": "",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "CalendarRepository + CalendarViewModel",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/calendar/",
+      "decision": "create",
+      "usage": "Manages month cursor (`Europe/Madrid`), Month/List/Upcoming modes, category/status filters, event detail + create/edit/publish/delete, image/gallery uploads, export download via `BrowserFileDownload`, and `409` conflict reload.",
+      "notes": "",
+      "layer": "viewmodel",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "CalendarScreen + UpcomingDrawer + EventFormModal",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/calendar/",
+      "decision": "create",
+      "usage": "Routes `/calendari` and `/calendari/{id}` matching mockups: `SectionHeader` + `+ NOU ESDEVENIMENT` (red `+` FAB on mobile), 4 KPI cards (`Aquest mes`, `Pròxima actuació`, `Pròxim assaig`, `Publicats a la web`), `Mes` / `Llista` segmented control + `Totes les categories` / `Tots els estats` dropdowns, 2-column `Mes` view (Mon–Sun month grid with category-colored event pills, navy today circle, bottom legend + right `Pròxims esdeveniments` card whose `Veure tots` opens a right-side searchable/chip-filtered drawer), date-grouped `Llista` view, copyable `/public/events.ics` + Export JSON/ICS controls, event detail view/drawer (with contract link for `board` and attendance slot for `spec-07`), and centered `Edita l'esdeveniment` / `Nou esdeveniment` modal (full-screen sheet on mobile) with image/gallery upload and public-visibility warning.",
+      "notes": "",
+      "layer": "ui",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    }
+  ],
+  "structure": "Vertical slice flow:\n\n```text\nWeb /calendari & /calendari/{id}\n  → CalendarViewModel → CalendarRepository → MuixerangaApi\n  ↕ JSON / Multipart / ICS\nServer EventRoutes → EventService (+ FileStorageService, IcsGenerator) → EventMapper → Events.sq\n  ↑\nAstro / Google Calendar → GET /api/v1/public/events, /public/events/{id}, /public/events.ics\n```\n\nCategory color palette (§7.4):\n- `actuacio` → red (`#BB2029`)\n- `taller` → green\n- `assaig` → blue\n- `diada`, `trobada` → yellow (`#FFC432`)\n- `reunio` → purple\n- `termini` → orange\n- `altre` → grey",
+  "sections": [
+    {
+      "title": "Europe/Madrid date range & DST handling (§10.1.7)",
+      "description": "Convert `from=YYYY-MM-DD` to `LocalDate.atStartOfDay(ZoneId.of(\"Europe/Madrid\")).toInstant()` and `to=YYYY-MM-DD` to `LocalDate.plusDays(1).atStartOfDay(ZoneId.of(\"Europe/Madrid\")).toInstant()` (exclusive upper bound).",
+      "behavior": "Events overlapping `[fromInstant, toExclusiveInstant)` match, guaranteeing 23-hour spring-forward and 25-hour fall-back days behave accurately."
+    },
+    {
+      "title": "RFC 5545 iCalendar output",
+      "description": "Include `BEGIN:VCALENDAR`, `VERSION:2.0`, `PRODID:-//Muixeranga d'Elx//Tabala//CA`, `CALSCALE:GREGORIAN`, `X-WR-CALNAME:Muixeranga d'Elx`, `X-WR-TIMEZONE:Europe/Madrid`, and one `VEVENT` per event.",
+      "behavior": "Escape commas/semicolons/newlines per RFC 5545 and fold lines > 75 octets with `CRLF + space`. For `allDay` events emit `DTSTART;VALUE=DATE:YYYYMMDD` and `DTEND;VALUE=DATE:<nextDay>`; for timed events emit UTC timestamps (`DTEND` defaults to `DTSTART + 2h` if `endDate == null`)."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "List events",
+      "method": "GET",
+      "path": "/api/v1/events",
+      "notes": "Filters: `from`, `to` (Madrid dates), `category` (CSV), `status`, `published` (staff+), `ownerId`. Default sort `date`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Export private events",
+      "method": "GET",
+      "path": "/api/v1/events/export",
+      "notes": "`?from=&to=&format=json|ics`. `members` visibility (`application/json` or `text/calendar`).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Get event",
+      "method": "GET",
+      "path": "/api/v1/events/{id}",
+      "notes": "Audience-filtered (`members`, `staff`, `board`).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Create event",
+      "method": "POST",
+      "path": "/api/v1/events",
+      "notes": "`technical`/`board`/`admin`. `201` + `Location`. Derives `type`, enforces `published=false` for `reunio`/`termini`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Update event",
+      "method": "PATCH",
+      "path": "/api/v1/events/{id}",
+      "notes": "`technical`/`board`/`admin`. RFC 7386 with `version`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Delete event",
+      "method": "DELETE",
+      "path": "/api/v1/events/{id}",
+      "notes": "`technical`/`board`/`admin`. `204` or `409 in_use` if documents linked.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Upload event image",
+      "method": "PUT",
+      "path": "/api/v1/events/{id}/image",
+      "notes": "`technical`/`board`/`admin`. Multipart `file` (JPEG/PNG/WebP, max 10 MB). Upload rate limit.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Delete event image",
+      "method": "DELETE",
+      "path": "/api/v1/events/{id}/image",
+      "notes": "`technical`/`board`/`admin`. `204` + removes file from disk.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Upload gallery images",
+      "method": "POST",
+      "path": "/api/v1/events/{id}/gallery",
+      "notes": "`technical`/`board`/`admin`. Multiple `file` parts; total max 50 (`422` if exceeded). Upload rate limit.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Delete gallery image",
+      "method": "DELETE",
+      "path": "/api/v1/events/{id}/gallery/{fileId}",
+      "notes": "`technical`/`board`/`admin`. `204` + removes file from disk.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Public events list",
+      "method": "GET",
+      "path": "/api/v1/public/events",
+      "notes": "Anonymous, `Cache-Control: public, max-age=300`. `published=true` only; filters `from`, `to`, `category`, `type`; `sort=date|-date`.",
+      "implemented_on": "server",
+      "consumed_by": [],
+      "auth": "none"
+    },
+    {
+      "name": "Public event detail",
+      "method": "GET",
+      "path": "/api/v1/public/events/{id}",
+      "notes": "Anonymous, `Cache-Control: public, max-age=300`. `404` if not published.",
+      "implemented_on": "server",
+      "consumed_by": [],
+      "auth": "none"
+    },
+    {
+      "name": "Public iCalendar feed",
+      "method": "GET",
+      "path": "/api/v1/public/events.ics",
+      "notes": "Anonymous, `text/calendar; charset=utf-8`, `Cache-Control: public, max-age=300`. Published events from -2 to +12 months.",
+      "implemented_on": "server",
+      "consumed_by": [],
+      "auth": "none"
+    }
+  ],
+  "persistence": "Uses SQLite v0.2 tables `events`, `event_gallery`, `event_figures`, `event_groups`, `stored_files`, `contracts`, `documents`, `attendance` via `Events.sq`. No new migrations.",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Events.sq + EventService + EventMapper + IcsGenerator",
+      "spec": "Implement SQLDelight queries, `EventService` (CRUD, category→type derivation, `reunio`/`termini` force unpublished, Madrid range conversion, `FileStorageService` image & gallery max-50 integration, `409 in_use` on linked documents), `EventMapper` (`public`/`members`/`staff`/`board`), and RFC 5545 `IcsGenerator`.",
+      "acceptance_criteria": [
+        "`reunio` and `termini` always persist `published = false`",
+        "`endDate < date` returns `422`",
+        "Gallery rejects the 51st image with `422`",
+        "ICS output escapes special chars and formats `allDay` as `VALUE=DATE` with exclusive `DTEND`"
+      ],
+      "dependencies": [],
+      "components": ["Events.sq", "EventService + IcsGenerator", "EventMapper"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T2",
+      "title": "EventRoutes + OpenAPI + DST & permission matrix tests",
+      "spec": "Register all 13 event routes (private + public + exports + media), update `openapi.yaml`, and add `:server:test` suite verifying full §4.4 role matrix, field visibility per role, public `Cache-Control`, unpublished `404`, and March/October Madrid DST boundaries (§10.1.7).",
+      "acceptance_criteria": [
+        "`./gradlew :server:test` passes including `OpenApiRouteSyncTest` and DST tests"
+      ],
+      "dependencies": ["T1"],
+      "components": ["EventRoutes"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T3",
+      "title": "MuixerangaApi events + CalendarRepository + CalendarViewModel",
+      "spec": "Add client methods in `:core` (including multipart image/gallery upload and byte export) and build `CalendarRepository` + `CalendarViewModel` in `:app:shared` for month/list/upcoming state, filters, CRUD, and export download.",
+      "acceptance_criteria": [
+        "`jvmTest` verifies month grid date range computation, filters, and export trigger"
+      ],
+      "dependencies": ["T2"],
+      "components": ["MuixerangaApi (events extension)", "CalendarRepository + CalendarViewModel"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T4",
+      "title": "CalendarScreen + UpcomingDrawer + EventFormModal + navigation",
+      "spec": "Wire `/calendari` and `/calendari/{id}` in `AppNavigation` matching desktop & mobile mockups: 4 KPI cards (horizontally scrollable on mobile), `Mes` / `Llista` segmented control + filters, Mon–Sun month grid with category colors & legend + right `Pròxims esdeveniments` sidebar (`Veure tots` right drawer), date-grouped list view, copyable `/public/events.ics` URL + Export JSON/ICS, event detail (contract link for `board` + attendance slot), and centered create/edit modal (full-screen sheet on mobile) with image/gallery upload and publish warning.",
+      "acceptance_criteria": [
+        "`./gradlew :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes",
+        "Write controls visible only with `events:write`"
+      ],
+      "dependencies": ["T3"],
+      "components": ["CalendarScreen + UpcomingDrawer + EventFormModal"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    }
+  ]
+}

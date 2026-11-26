@@ -1,0 +1,333 @@
+{
+  "feature_name": "SPEC-06 Figures & Posicions",
+  "feature_slug": "spec-06-figures",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala.feature.figures",
+  "scaffold": "MainScaffold",
+  "summary": "Full **Figures** repertoire & visual position editor (Fase 3): CRUD `/api/v1/figures` + image, transactional `PUT /api/v1/figures/{id}/positions` with optimistic `figure.version` & strict `(-20..20, 0..8)` coordinate bounds, CRUD `/api/v1/position-types` (`technical`/`admin` only), RGPD-filtered `/api/v1/public/figures*` + `/public/position-types`, and web visual grid editor by height level `z`. **Server + web (wasmJs) + Astro public API**.",
+  "overview": "Fase 3 repertoire slice covering muixeranga figures, their 3D position placements (`x, y, z`), editable position types, public repertoire endpoints, and the interactive grid editor.\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §4.4, §5.10, §6.1.1, §6.7 (figuras), §6.8 (`/public/figures*`, `/public/position-types`), §7.4 (Figures), §12.2 · `docs/decisiones.md`.\n\n**Prerequisites**\n- `platform-schema-v02` (`figures` with `name UNIQUE`, `positions` with `UNIQUE(figure_id, x, y, z)`, `UNIQUE(figure_id, user_id)`, and `CHECK(x BETWEEN -20 AND 20 AND y BETWEEN -20 AND 20 AND z BETWEEN 0 AND 8)`, `position_types` with 10 seeded types).\n- `platform-core-contract` (`Figure*`, `Position*`, `PutFigurePositionsRequest(version, positions)`, `PositionType*`, `FigureValidator`).\n- `platform-server-auth`, `platform-files` (figure image upload), `spec-05-members` (member lookup for position assignment), `platform-web-shell`, `platform-openapi-deploy`.\n\n**Key business, permission & RGPD rules (`decisiones.md` & §5.10)**\n- **Split write permissions (§4.4 / §6.1.1):**\n  - `figures` and `positions`: read by `member`+ (and public); write (`POST`/`PATCH`/`DELETE /figures*`, `PUT /figures/{id}/positions`, image) by **`technical`, `board`, `admin`**.\n  - `position-types`: read by `member`+ (and public); write (`POST`/`PATCH`/`DELETE /position-types*`) by **`technical` and `admin` ONLY** (`board` receives `403`!). Deleting a `PositionType` still referenced by any `Position` returns `409 in_use` (`ON DELETE RESTRICT`).\n- **Transactional `PUT /api/v1/figures/{id}/positions` (`decisiones.md`):** body `PutFigurePositionsRequest(version: Int, positions: List<PositionInput>)`. Checks `figures.version == request.version` (`409 version_conflict` with current figure + positions if stale), validates all positions in one pass (`x,y ∈ -20..20`, `z ∈ 0..8`, no duplicate `(x,y,z)` → `409 duplicate` / `422`, no duplicate non-null `userId` in the same figure → `409 duplicate` / `422`, every `positionTypeId` exists, every non-null `userId` exists and is not `deleted`), atomically replaces all `positions` for `figureId` (preserving client-supplied `id` if already owned by the figure or generating UUIDv7), and increments `figures.version`.\n- **Public API filtering (§5.10, §6.8):**\n  - `GET /api/v1/public/figures` and `/public/figures/{id}` (`Cache-Control: public, max-age=300`): exclude `status = retired` (`404` on `/public/figures/{id}` if retired), omit `videoUrl` (visibility `members`), and map `Position.userId = null` whenever the assigned person is a minor, non-`active`, or has `consent.publicProfile == false`.\n  - `GET /api/v1/public/position-types`: returns all position types with `Cache-Control: public, max-age=300`.\n\n**Acceptance (slice)**\n- `./gradlew :server:test :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes.\n- Permission matrix test explicitly confirms `board` can edit figures/positions (`200`/`201`) but gets **`403`** on `POST`/`PATCH`/`DELETE /position-types*`, whereas `technical` and `admin` succeed.\n- `PUT /figures/{id}/positions` rejects stale `version` (`409 version_conflict`), out-of-range coords (`422`), duplicate `(x,y,z)`, and duplicate `userId` without partial writes (transactional rollback).\n- `GET /api/v1/public/figures` omits `retired` figures, omits `videoUrl`, and sets `userId = null` for minors and non-public members.\n- Web UI at `/figures` renders figure list + detail + visual grid editor by level `z` (`0..8`) with drag/click placement, person duplicate warning, `position-types` management modal (visible only with `position-types:write`), and `409` reload handling.\n- `OpenApiRouteSyncTest` passes.",
+  "client_scope": {
+    "preset": "server_web",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": true,
+    "ios": false,
+    "external_public_api": true
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "webApp": ":app:webApp",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "All figures UI, grid editor, ViewModels, and repositories live in `:app:shared` `commonMain`. `:app:webApp` hosts wasm only. Android/desktop/JS out of v1 scope.",
+  "out_of_scope": "- Per-event lineups (`Lineup`) and AI rehearsal planner (§11 future phase).\n- Attendance (`spec-07-attendance`).\n- Android, desktop, JS, iOS clients.",
+  "external_systems": [
+    {
+      "name": "Astro (muixerangadelx.com)",
+      "role": "Consumes `GET /api/v1/public/figures`, `/public/figures/{id}`, and `/public/position-types`."
+    }
+  ],
+  "auth": {
+    "client": "Bearer JWT via `SessionManager`. Figures tab needs `figures:read`; figure & position editing needs `figures:write`; position-types management needs `position-types:write` (`technical`/`admin` only).",
+    "server": "Private read: `member`+. Write figures/positions: `technical`, `board`, `admin`. Write position-types: `technical`, `admin` ONLY (`403` for `board` and `member`). Public routes: anonymous."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §4.4, §5.10, §6.1.1, §6.7, §6.8, §7.4, §12.2",
+    "docs/decisiones.md",
+    "specs/platform-schema-v02",
+    "specs/platform-files"
+  ],
+  "images": [],
+  "components": [
+    {
+      "name": "Figures.sq",
+      "location": "server/src/main/sqldelight/com/bitdesal/tabala/db/Figures.sq",
+      "decision": "create",
+      "usage": "SQLDelight queries for `figures`, `positions` (joined with `users` + `position_types` for RGPD filtering), `position_types`, usage count for `409 in_use`, and version-checked figure updates.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "FigureService + PositionTypeService",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/figures/",
+      "decision": "create",
+      "usage": "CRUD figures (unique name `409 duplicate`, image upload/delete via `FileStorageService`), transactional `replacePositions(figureId, version, positions)` validating bounds `-20..20`/`0..8`, unique `(x,y,z)`, unique `userId`, and existing refs; CRUD position-types with `409 in_use` on delete.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "FigureMapper",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/mapping/FigureMapper.kt",
+      "decision": "create",
+      "usage": "Maps `Figure` (`members` audience incl. `videoUrl` + all assigned `userId`) and `FigurePublic` (omits `videoUrl`, nulls `userId` for minors/inactive/non-public members).",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "FigureRoutes",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/routes/FigureRoutes.kt",
+      "decision": "create",
+      "usage": "Mounts all 15 private + public routes for figures, positions, and position-types with split role guards.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "MuixerangaApi (figures extension)",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/api/client/FiguresApi.kt",
+      "decision": "create",
+      "usage": "Client methods for figures CRUD, image upload/delete, `getFigurePositions`, `putFigurePositions(id, PutFigurePositionsRequest)`, and position-types CRUD.",
+      "notes": "",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "FiguresRepository + FiguresViewModel + FigureEditorViewModel",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/figures/",
+      "decision": "create",
+      "usage": "Manages figure list/filters, position-types CRUD, local draft grid state per level `z` (`0..8`) with duplicate-person detection before save, `PUT /figures/{id}/positions` with `version`, and `409` reload recovery.",
+      "notes": "",
+      "layer": "viewmodel",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "FiguresScreen + FigureEditorScreen + PositionTypesDialog",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/figures/",
+      "decision": "create",
+      "usage": "Routes `/figures` and `/figures/{id}`: `KpiFilterStrip`, figure cards with `status` & `levels`, interactive level selector (`z = 0..8`) + scrollable grid (`x,y ∈ -20..20`) supporting both drag-and-drop (desktop) and tap-to-place (mobile/touch), inspector panel to pick `positionType` and member (warning if member already placed in this figure), and `PositionTypesDialog` gated by `position-types:write`.",
+      "notes": "",
+      "layer": "ui",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    }
+  ],
+  "structure": "Vertical slice flow:\n\n```text\nWeb /figures & /figures/{id}\n  → FiguresViewModel / FigureEditorViewModel → FiguresRepository → MuixerangaApi\n  ↕ JSON + Multipart (Bearer)\nServer FigureRoutes → FigureService / PositionTypeService (+ FileStorageService) → FigureMapper → Figures.sq\n  ↑\nAstro public site → GET /api/v1/public/figures, /public/figures/{id}, /public/position-types\n```",
+  "sections": [
+    {
+      "title": "Transactional positions replace & optimistic locking (`decisiones.md`)",
+      "description": "`PUT /api/v1/figures/{id}/positions` receives `{version, positions: [{id?, positionTypeId, userId?, x, y, z}]}`.",
+      "behavior": "Inside `DatabaseAccess.writeTransaction`: check `figures.version == request.version` (`409 version_conflict` with current figure if mismatch); validate every position (`x,y ∈ -20..20`, `z ∈ 0..8`, unique `(x,y,z)`, unique non-null `userId`, existing `positionTypeId` and active/non-deleted `userId`); delete old rows and insert new set; increment `figures.version`; return updated positions + new `version`."
+    },
+    {
+      "title": "Visual grid editor UX (§7.4)",
+      "description": "Editor displays level tabs `Piso z` (`0 = Pinya/terra`, `1..levels`), a zoomable/pannable grid centered on `(0,0)` with coordinates `x,y ∈ -20..20`, and a side/bottom inspector.",
+      "behavior": "Supports both drag-and-drop and click/tap-to-place so it stays usable on mobile touch screens (≥360 px). Selecting a member who is already assigned to another cell in the same figure displays a clear Valencian warning and offers to move them from the previous cell."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "List figures",
+      "method": "GET",
+      "path": "/api/v1/figures",
+      "notes": "`member`+. Filters: `status`, `q`. Default sort `name`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Get figure",
+      "method": "GET",
+      "path": "/api/v1/figures/{id}",
+      "notes": "`member`+. Includes derived `positions` and `videoUrl`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Create figure",
+      "method": "POST",
+      "path": "/api/v1/figures",
+      "notes": "`technical`/`board`/`admin`. `201` + `Location`. `409 duplicate` if `name` exists.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Update figure",
+      "method": "PATCH",
+      "path": "/api/v1/figures/{id}",
+      "notes": "`technical`/`board`/`admin`. RFC 7386 with `version`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Delete figure",
+      "method": "DELETE",
+      "path": "/api/v1/figures/{id}",
+      "notes": "`technical`/`board`/`admin`. `204`; cascades `positions`, cleans stored image.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Upload / delete figure image",
+      "method": "PUT",
+      "path": "/api/v1/figures/{id}/image",
+      "notes": "Also `DELETE /api/v1/figures/{id}/image`. `technical`/`board`/`admin`. Max 10 MB; upload rate limit.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "List figure positions",
+      "method": "GET",
+      "path": "/api/v1/figures/{id}/positions",
+      "notes": "`member`+. Ordered by `z, y, x`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Replace figure positions",
+      "method": "PUT",
+      "path": "/api/v1/figures/{id}/positions",
+      "notes": "`technical`/`board`/`admin`. Body `{version, positions}`. Transactional; validates bounds `-20..20`/`0..8`, unique `(x,y,z)`, unique `userId`, optimistic `version`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "List position types",
+      "method": "GET",
+      "path": "/api/v1/position-types",
+      "notes": "`member`+. Default sort `name`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Create position type",
+      "method": "POST",
+      "path": "/api/v1/position-types",
+      "notes": "`technical`/`admin` ONLY (`403` for `board`). `201` + `Location`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Update position type",
+      "method": "PATCH",
+      "path": "/api/v1/position-types/{id}",
+      "notes": "`technical`/`admin` ONLY. RFC 7386 with `version`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Delete position type",
+      "method": "DELETE",
+      "path": "/api/v1/position-types/{id}",
+      "notes": "`technical`/`admin` ONLY. `204`, or `409 in_use` if referenced by any position.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Public figures list",
+      "method": "GET",
+      "path": "/api/v1/public/figures",
+      "notes": "Anonymous, `Cache-Control: public, max-age=300`. Non-retired only; no `videoUrl`; `userId = null` for non-public/minors.",
+      "implemented_on": "server",
+      "consumed_by": [],
+      "auth": "none"
+    },
+    {
+      "name": "Public figure detail",
+      "method": "GET",
+      "path": "/api/v1/public/figures/{id}",
+      "notes": "Anonymous, `Cache-Control: public, max-age=300`. `404` if `retired`.",
+      "implemented_on": "server",
+      "consumed_by": [],
+      "auth": "none"
+    },
+    {
+      "name": "Public position types",
+      "method": "GET",
+      "path": "/api/v1/public/position-types",
+      "notes": "Anonymous, `Cache-Control: public, max-age=300`.",
+      "implemented_on": "server",
+      "consumed_by": [],
+      "auth": "none"
+    }
+  ],
+  "persistence": "Uses SQLite v0.2 `figures`, `positions`, `position_types`, `users`, and `stored_files` via `Figures.sq`. No new migrations.",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Figures.sq + FigureService + PositionTypeService + FigureMapper",
+      "spec": "Implement SQLDelight queries, `FigureService` (CRUD, image via `FileStorageService`, transactional `replacePositions` with `figure.version`, coord bounds `-20..20`/`0..8`, unique `(x,y,z)` & `userId`), `PositionTypeService` (CRUD + `409 in_use`), and `FigureMapper` (private vs RGPD-filtered public).",
+      "acceptance_criteria": [
+        "`PUT /figures/{id}/positions` rolls back atomically on duplicate coords, duplicate `userId`, or out-of-range coords",
+        "Stale `version` returns `409 version_conflict` with current figure",
+        "Deleting an in-use `PositionType` returns `409 in_use`"
+      ],
+      "dependencies": [],
+      "components": ["Figures.sq", "FigureService + PositionTypeService", "FigureMapper"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T2",
+      "title": "FigureRoutes + OpenAPI + permission & RGPD tests",
+      "spec": "Register all 15 routes (including `DELETE .../image`), update `openapi.yaml`, and add `:server:test` suite verifying split permissions (`board` writes figures/positions, gets `403` on position-types writes; `technical` writes both; `member` read-only), and public RGPD filtering (retired `404`, no `videoUrl`, `userId = null` for minors/non-public).",
+      "acceptance_criteria": [
+        "`./gradlew :server:test` passes including `OpenApiRouteSyncTest`"
+      ],
+      "dependencies": ["T1"],
+      "components": ["FigureRoutes"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T3",
+      "title": "MuixerangaApi figures + Repository + ViewModels",
+      "spec": "Add client methods in `:core` and build `FiguresRepository`, `FiguresViewModel`, and `FigureEditorViewModel` in `:app:shared` (grid draft manipulation, duplicate-member warning/move logic, optimistic `version` save, and `409` reload).",
+      "acceptance_criteria": [
+        "`jvmTest` verifies duplicate person detection, coordinate validation, and `PUT` payload construction"
+      ],
+      "dependencies": ["T2"],
+      "components": ["MuixerangaApi (figures extension)", "FiguresRepository + FiguresViewModel + FigureEditorViewModel"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T4",
+      "title": "FiguresScreen + visual grid FigureEditorScreen + PositionTypesDialog + navigation",
+      "spec": "Wire `/figures` and `/figures/{id}` in `AppNavigation`: figure list + summary banner, figure detail + visual level-by-level grid editor (drag + tap-to-place), figure form with image upload, and `PositionTypesDialog` gated by `position-types:write`.",
+      "acceptance_criteria": [
+        "`./gradlew :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes",
+        "`board` sees figure edit controls but not `position-types` edit controls"
+      ],
+      "dependencies": ["T3"],
+      "components": ["FiguresScreen + FigureEditorScreen + PositionTypesDialog"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    }
+  ]
+}

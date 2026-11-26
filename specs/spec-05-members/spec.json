@@ -1,0 +1,349 @@
+{
+  "feature_name": "SPEC-05 Membres",
+  "feature_slug": "spec-05-members",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala.feature.members",
+  "scaffold": "MainScaffold",
+  "summary": "Full **Membres** directory & access management: CRUD `/api/v1/users`, strict audience mapping (`public` / `staff` / `board`), soft-delete (`status = deleted` + auto-disable account + remove holders), `admin`-only account & Google unlink endpoints, RGPD `anonymize` (preserving historical `documents` & `attendance`), `/api/v1/public/members`, and web table + 6-tab member detail UI with WhatsApp invite shortcut. **Server + web (wasmJs) + Astro public API**.",
+  "overview": "Fase 2 core member management slice governing colla people, guardians, RGPD consents, app accounts, and the public member directory for Astro.\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §4.1–4.4, §5.4, §6.7 (personas), §6.8 (`/public/members`), §7.4 (Membres), §10.1–10.2 · `docs/decisiones.md`.\n\n**Prerequisites**\n- `platform-schema-v02` (`users`, `user_accounts`, `user_guardians`, `google_identities`, `sessions`, `org_role_holders`).\n- `platform-core-contract` (`UserBoard`, `UserStaff`, `UserPublic`, `MemberStatus.DELETED`, `PatchField`).\n- `platform-server-auth` (`SessionService` cache invalidation when disabling/deleting accounts).\n- `platform-files` (for `PUT/DELETE /api/v1/users/{id}/avatar`), `platform-web-shell`, `platform-openapi-deploy`.\n\n**Key RGPD & lifecycle rules (`decisiones.md` & §5.4)**\n- **Audience mapping on `/api/v1/users` and `/api/v1/users/{id}`:**\n  - `anonymous`: `401` on private; `/api/v1/public/members` returns only `status = active && consent.publicProfile == true && !isMinor` with `{id, name, lastNames, nickname, aboutMe, avatar, orgRoles}` and `Cache-Control: public, max-age=300`.\n  - `member`: `403` on `GET /users`; `404` on `GET /users/{id}` for any other user (§10.1.2; own data is accessed via `/me`).\n  - `technical`: `200` on `GET /users` and `GET /users/{id}` mapped strictly to **`UserStaff`** (fields of level `public`, `members`, `staff`: includes `status`, `membershipType`, `joinedAt`, `heightCm`, `isMinor`, `emergencyContact`, `orgRoles`, `positions`; **excludes** `board`/`self` fields such as `birthDate`, `documentId`, `email`, `phoneNumber`, `address`, `memberNumber`, `leftAt`, `sizes`, `guardians`, `consent`, `account`, `notes`). `403` on all writes.\n  - `board`: full `UserBoard` read + CRUD (`POST`/`PATCH`/`DELETE /users*`, avatar upload); `403` on `/users/{id}/account*`, `/anonymize`, and `?hard=true`.\n  - `admin`: full `UserBoard` + account management + `anonymize` + `?hard=true`.\n- **Minors:** `isMinor` is computed dynamically against today's date in `Europe/Madrid` (false if `birthDate == null`). When `isMinor == true`, `guardians` must contain ≥ 1 guardian (`422 validation_failed`). Minors NEVER appear in `/api/v1/public/members` even if `consent.publicProfile == true`.\n- **Soft delete (`DELETE /api/v1/users/{id}`, `decisiones.md`):** sets `users.status = 'deleted'`, removes the user from `org_role_holders`, and **automatically disables their account** (`user_accounts.status = 'disabled'` + revokes all their active `sessions` + invalidates session cache). Personal data, `documents`, and `attendance` remain intact in case the person returns. Cannot soft-delete the last active `admin` (`409` / `422`). `?hard=true` (`admin` only) physically deletes the user unless blocked by `documents` `ON DELETE RESTRICT` (`409 in_use`) or last-admin guard.\n- **Anonymize (`POST /api/v1/users/{id}/anonymize`, `admin` only, `decisiones.md`):** requires `{\"confirm\": true}` (`422` otherwise) and rejects if target is the last active `admin`. In one transaction: wipes identifiable PII (`name = \"Persona eliminada\"`, clears `lastNames`, `nickname`, `birthDate`, `documentId`, `email`, `phoneNumber`, `address_*`, `aboutMe`, `avatar_file_id`, `member_number`, `emergency_contact_*`, `notes`, resets `consent_* = 0`), sets `status = 'deleted'`, deletes `user_guardians`, `user_accounts`, `google_identities`, `sessions` (+ cache invalidation), removes from `org_role_holders`, sets `positions.user_id = NULL`, and deletes avatar blobs post-commit — while **keeping the `users` row, its `documents`, and its `attendance` records** for historical integrity.\n- **Last-admin protection:** `PATCH /users/{id}/account`, `DELETE /users/{id}/account`, `DELETE /users/{id}`, and `anonymize` must prevent removing/disabling the last active `admin` account (`409` / `422`).\n\n**Acceptance (slice)**\n- `./gradlew :server:test :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes.\n- Permission & RGPD matrix verifies: `member` gets `404` on another user's `GET /users/{id}`; `technical` gets `200` with `UserStaff` (zero `board`/`self` fields like `birthDate`, `documentId`, `notes`, `guardians`, `email`); `board` gets `UserBoard` and `403` on account/anonymize routes; `admin` manages accounts with last-admin guard; `/public/members` never exposes minors or non-public users.\n- `DELETE /users/{id}` sets `status = deleted`, strips `org_role_holders`, disables account, and revokes active sessions.\n- `anonymize` wipes PII + account + guardians + avatar + holders while keeping `users` row, `documents`, and `attendance`.\n- Web UI at `/membres` renders summary banner (actius, amb compte, menors, perfil públic), searchable/filterable table, 6-tab member detail (`Dades personals`, `Colla`, `Contacte i emergència`, `Tutors`, `Consentiments`, `Accés` for admin), role-aware read-only/hidden fields, and «Avisa per WhatsApp» invite button.\n- `OpenApiRouteSyncTest` passes.",
+  "client_scope": {
+    "preset": "server_web",
+    "server": true,
+    "android": false,
+    "desktop": false,
+    "web": true,
+    "ios": false,
+    "external_public_api": true
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "webApp": ":app:webApp",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "All members UI, ViewModels, and repositories live in `:app:shared` `commonMain`. `:app:webApp` hosts wasm only. Android/desktop/JS out of v1 scope.",
+  "out_of_scope": "- Self profile `/me` and `/me/export` (`platform-server-auth` + `platform-me-rgpd`).\n- Organigrama CRUD (`spec-01-org-chart`).\n- Bulk CSV/PII import scripts.\n- Medical notes special-category RGPD fields (§12.4 open question).\n- Android, desktop, JS, iOS clients.",
+  "external_systems": [
+    {
+      "name": "Astro (muixerangadelx.com)",
+      "role": "Consumes `GET /api/v1/public/members` anonymously with 5-minute cache."
+    }
+  ],
+  "auth": {
+    "client": "Bearer JWT via `SessionManager`. Tab `/membres` visible when `users:read` is present (`technical`, `board`, `admin`). Edit controls require `users:write`; Accés tab & anonymize require `accounts:admin`.",
+    "server": "`technical` read (`UserStaff`); `board` full CRUD (`UserBoard`); `admin` adds account endpoints, `anonymize`, and `?hard=true`; `member` receives `404` on other users' `GET /users/{id}` and `403` on `GET /users`."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §4.1–4.4, §5.4, §6.7, §6.8, §7.4, §10.1–10.2",
+    "docs/decisiones.md",
+    "specs/platform-server-auth",
+    "specs/platform-files"
+  ],
+  "images": [
+    {
+      "path": "assets/llista-desktop.png",
+      "caption": "Membres directory: 4 clickable KPI filter cards (Membres actius active, Amb accés a l'app, Menors, Amb perfil públic), search + Tots els accessos + Tots els càrrecs dropdowns, and table (PERSONA with avatar/nickname/Públic/Menor badges, CÀRRECS chips, ESTAT pill, ACCÉS role, chevron)",
+      "kind": "desktop"
+    },
+    {
+      "path": "assets/edita-persona-desktop.png",
+      "caption": "Edita el membre right-side drawer: avatar + name + nickname header, grouped white cards (Dades personals + Colla/Contacte/Tutors/Consentiments/Accés sections), and sticky Cancel·la / DESA footer",
+      "kind": "drawer"
+    },
+    {
+      "path": "assets/nova-persona-desktop.png",
+      "caption": "Nova persona centered modal chrome (CREAR / Cancel·la / CREA — implement with real Member fields; prototype mockup shows placeholder event fields)",
+      "kind": "modal"
+    }
+  ],
+  "components": [
+    {
+      "name": "Users.sq",
+      "location": "server/src/main/sqldelight/com/bitdesal/tabala/db/Users.sq",
+      "decision": "create",
+      "usage": "SQLDelight queries for filtered/paginated users (`status`, `membershipType`, `isMinor` via Madrid cutoff date, `orgRoleId`, `areaId`, `hasAccount`, `q`), guardians CRUD, account admin queries, count active admins, soft-delete, anonymize, and public members.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "UserService + AccountAdminService",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/users/",
+      "decision": "create",
+      "usage": "Transactional user CRUD (with minor guardian validation, default `groupId = ownGroup`, `memberNumber` uniqueness `409 duplicate`), soft-delete (`deleted` + strip holders + disable account + revoke sessions), `anonymize` (preserving `documents` & `attendance`), avatar upload/delete via `FileStorageService`, and `admin` account invite/patch/unlink-Google/delete with last-admin guard.",
+      "notes": "Calls `SessionService.invalidateUserCache(userId)` whenever account status/role changes or sessions are revoked.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "UserMapper",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/mapping/UserMapper.kt",
+      "decision": "create",
+      "usage": "Strict DTO mappers for `UserPublic`, `UserStaff`, and `UserBoard` (reusing `UserSelfMapper` where helpful).",
+      "notes": "Never maps `googleSub` or session hashes.",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "UserRoutes",
+      "location": "server/src/main/kotlin/com/bitdesal/tabala/routes/UserRoutes.kt",
+      "decision": "create",
+      "usage": "Mounts all 13 private + public user and account endpoints.",
+      "notes": "",
+      "layer": "server",
+      "module": ":server",
+      "sourceSet": "main",
+      "clients": ["server"]
+    },
+    {
+      "name": "MuixerangaApi (users extension)",
+      "location": "core/src/commonMain/kotlin/com/bitdesal/tabala/api/client/UsersApi.kt",
+      "decision": "create",
+      "usage": "Client methods for users CRUD, avatar upload/delete, account invite/patch/unlink/delete, and anonymize.",
+      "notes": "",
+      "layer": "core",
+      "module": ":core",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "MembersRepository + MembersViewModel",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/members/",
+      "decision": "create",
+      "usage": "Manages member list, summary metrics, filters/search, detail tabs, role-aware edit/read-only state, account admin actions, WhatsApp invite URI builder, anonymize confirmation, and `409` conflict handling.",
+      "notes": "",
+      "layer": "viewmodel",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "MembersScreen + MemberEditDrawer + NewMemberModal",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/feature/members/",
+      "decision": "create",
+      "usage": "Routes `/membres` and `/membres/{id}` matching mockups: `SectionHeader` + `+ NOVA PERSONA`, 4 clickable KPI filter cards (`Membres actius`, `Amb accés a l'app`, `Menors`, `Amb perfil públic`), search (`Busca per nom, malnom o correu`) + `Tots els accessos` + `Tots els càrrecs` dropdowns, table (`PERSONA` with colored initials or Bearer avatar, nickname, `Públic`/`Menor` badges; `CÀRRECS` chip; `ESTAT` pill; `ACCÉS` role / `Sense accés`; chevron), right-side `Edita el membre` drawer (grouped white cards/tabs for `Dades personals` incl. `preferredLocale`, `Colla`, `Contacte i emergència`, `Tutors`, `Consentiments`, and `admin`-only `Accés` with «Avisa per WhatsApp» + anonymize, sticky `Cancel·la` / `DESA`), and centered `Nova persona` modal using real member fields.",
+      "notes": "",
+      "layer": "ui",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    }
+  ],
+  "structure": "Vertical slice flow:\n\n```text\nWeb /membres & /membres/{id}\n  → MembersViewModel → MembersRepository → MuixerangaApi\n  ↕ JSON + Multipart (Bearer)\nServer UserRoutes → UserService / AccountAdminService (+ SessionService, FileStorageService) → UserMapper → Users.sq\n  ↑\nAstro public site → GET /api/v1/public/members (Cache-Control: public, max-age=300)\n```",
+  "sections": [
+    {
+      "title": "Filters and `isMinor` SQL calculation",
+      "description": "`GET /api/v1/users` supports `page`, `perPage`, `status` (defaults to excluding `deleted` unless explicitly filtered), `membershipType`, `isMinor` (bool), `orgRoleId`, `areaId`, `hasAccount` (bool), `q` (search in `name`, `last_names`, `nickname`), and `sort` (`name`, `memberNumber`, `joinedAt`, `createdAt`; default `name`).",
+      "behavior": "Compute the 18-year cutoff `LocalDate` in `Europe/Madrid` (`today.minusYears(18)`): a user is minor iff `birth_date IS NOT NULL AND birth_date > :cutoffIsoDate`."
+    },
+    {
+      "title": "Admin account lifecycle & WhatsApp invite (§4.1 & §7.4)",
+      "description": "`POST /users/{id}/account` creates an `invited` account (`loginEmail` lowercased, unique → `409 duplicate`). `DELETE /users/{id}/account/google` deletes `google_identities`, revokes all sessions, and resets status to `invited`. `PATCH /users/{id}/account` updates `role`, `status`, or `loginEmail` (disabling revokes all sessions immediately).",
+      "behavior": "After inviting a member in the `Accés` tab, display a «Avisa per WhatsApp» action opening `https://wa.me/<e164WithoutPlus>?text=<urlEncoded>` with «Ja pots entrar a https://admin.muixerangadelx.com amb el teu compte de Google (<loginEmail>).»"
+    },
+    {
+      "title": "Soft-delete vs Anonymize (`decisiones.md`)",
+      "description": "`DELETE /users/{id}` is a reversible member deactivation (`status = deleted`, holders cleared, account disabled, sessions revoked, data kept). `POST /users/{id}/anonymize` is an irreversible RGPD erasure (`confirm: true`) that strips PII, guardians, account, Google link, sessions, holders, positions (`user_id = NULL`), and avatar files while retaining the `users` row (`name = \"Persona eliminada\"`, `status = deleted`), `documents`, and `attendance`.",
+      "behavior": "In the UI, `anonymize` is accessible only to `admin` behind an explicit double-confirmation dialog warning that the operation is irreversible."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "List users",
+      "method": "GET",
+      "path": "/api/v1/users",
+      "notes": "`technical` (`UserStaff`), `board`/`admin` (`UserBoard`). `member` → `403`. Filters §6.7.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Get user",
+      "method": "GET",
+      "path": "/api/v1/users/{id}",
+      "notes": "`technical` (`UserStaff`), `board`/`admin` (`UserBoard`). `member` requesting another user → `404`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Create user",
+      "method": "POST",
+      "path": "/api/v1/users",
+      "notes": "`board`/`admin`. `201` + `Location`. Enforces guardians if `isMinor`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Update user",
+      "method": "PATCH",
+      "path": "/api/v1/users/{id}",
+      "notes": "`board`/`admin`. RFC 7386 with `version`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Soft-delete or hard-delete user",
+      "method": "DELETE",
+      "path": "/api/v1/users/{id}",
+      "notes": "`board`/`admin`: sets `status = deleted`, strips holders, disables account + revokes sessions (`204`). `?hard=true`: `admin` only (`409 in_use` if documents linked).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Upload user avatar",
+      "method": "PUT",
+      "path": "/api/v1/users/{id}/avatar",
+      "notes": "`board`/`admin`. Multipart `file` (JPEG/PNG/WebP, max 5 MB). Upload rate limit.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Delete user avatar",
+      "method": "DELETE",
+      "path": "/api/v1/users/{id}/avatar",
+      "notes": "`board`/`admin`. `204` + removes blobs from disk.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Invite user account",
+      "method": "POST",
+      "path": "/api/v1/users/{id}/account",
+      "notes": "`admin` only. `{loginEmail, role}` → `status = invited` (`201`).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Update user account",
+      "method": "PATCH",
+      "path": "/api/v1/users/{id}/account",
+      "notes": "`admin` only. Update `role`, `status`, `loginEmail`; last-admin guard; revokes sessions when disabled.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Unlink Google identity",
+      "method": "DELETE",
+      "path": "/api/v1/users/{id}/account/google",
+      "notes": "`admin` only. Deletes `google_identities`, revokes sessions, resets `status = invited` (`204`).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Delete user account",
+      "method": "DELETE",
+      "path": "/api/v1/users/{id}/account",
+      "notes": "`admin` only. Removes account, Google link, and sessions; keeps `User`. Last-admin guard.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Anonymize user (RGPD erasure)",
+      "method": "POST",
+      "path": "/api/v1/users/{id}/anonymize",
+      "notes": "`admin` only. Requires `{\"confirm\": true}`. Wipes PII/account/guardians/avatar/holders/positions; sets `status = deleted`; retains row + `documents` + `attendance`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Public members directory",
+      "method": "GET",
+      "path": "/api/v1/public/members",
+      "notes": "Anonymous, `Cache-Control: public, max-age=300`. Only `status = active`, `consent.publicProfile = true`, `!isMinor`.",
+      "implemented_on": "server",
+      "consumed_by": [],
+      "auth": "none"
+    }
+  ],
+  "persistence": "Uses SQLite v0.2 `users`, `user_accounts`, `user_guardians`, `google_identities`, `sessions`, `org_role_holders`, `positions`, `stored_files`, `documents`, `attendance` via `Users.sq`. No new migrations.",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Users.sq + UserMapper + UserService",
+      "spec": "Implement SQLDelight queries, strict `UserPublic`/`UserStaff`/`UserBoard` mappers, and `UserService` (CRUD, Madrid `isMinor` filter + guardian rule, soft-delete setting `status = deleted` + stripping holders + disabling account + revoking sessions, avatar upload/delete, `?hard=true` admin-only).",
+      "acceptance_criteria": [
+        "`DELETE /users/{id}` sets `status = deleted`, clears `org_role_holders`, disables account, and invalidates sessions",
+        "Creating a minor without guardians returns `422`"
+      ],
+      "dependencies": [],
+      "components": ["Users.sq", "UserMapper", "UserService + AccountAdminService"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T2",
+      "title": "AccountAdminService + anonymize",
+      "spec": "Implement `POST/PATCH/DELETE /users/{id}/account`, `DELETE /users/{id}/account/google`, and `POST /users/{id}/anonymize` with last-admin protection, immediate session cache invalidation, and preservation of `documents` and `attendance` on anonymize.",
+      "acceptance_criteria": [
+        "Last active admin cannot demote, disable, delete, or anonymize themselves",
+        "`anonymize` wipes PII/guardians/account/avatar/holders/positions while keeping `users` row (`deleted`), `documents`, and `attendance`"
+      ],
+      "dependencies": ["T1"],
+      "components": ["UserService + AccountAdminService"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server"]
+    },
+    {
+      "id": "T3",
+      "title": "UserRoutes + OpenAPI + RGPD & permission matrix tests",
+      "spec": "Register all 13 routes, update `openapi.yaml`, and add `:server:test` suite verifying every role (`anonymous`, `member`, `technical`, `board`, `admin`), `member` 404 on other users, `technical` `UserStaff` field filtering, and `/public/members` minor/consent exclusions.",
+      "acceptance_criteria": [
+        "`./gradlew :server:test` passes including `OpenApiRouteSyncTest`"
+      ],
+      "dependencies": ["T2"],
+      "components": ["UserRoutes"],
+      "target": "server",
+      "module": ":server",
+      "clients_affected": ["server", "web"]
+    },
+    {
+      "id": "T4",
+      "title": "MuixerangaApi users + MembersRepository + MembersViewModel",
+      "spec": "Add client methods in `:core` and build repository + ViewModel in `:app:shared` for list, filters, summary metrics, 6-tab member detail, account invite/unlink/disable, WhatsApp invite message builder, and anonymize confirmation.",
+      "acceptance_criteria": [
+        "`jvmTest` verifies filter query mapping, summary counts, and WhatsApp URI encoding"
+      ],
+      "dependencies": ["T3"],
+      "components": ["MuixerangaApi (users extension)", "MembersRepository + MembersViewModel"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T5",
+      "title": "MembersScreen + MemberEditDrawer + NewMemberModal + navigation",
+      "spec": "Wire `/membres` and `/membres/{id}` in `AppNavigation` matching reference mockups: clickable 4-card `KpiFilterStrip`, search + access/role dropdowns, table (`PERSONA`, `CÀRRECS`, `ESTAT`, `ACCÉS`), right-side `Edita el membre` drawer with role-aware sections/tabs (`Dades personals`, `Colla`, `Contacte i emergència`, `Tutors`, `Consentiments`, `Accés` for `admin` with «Avisa per WhatsApp» & anonymize), avatar upload/preview (Bearer), and centered `Nova persona` modal with real member fields.",
+      "acceptance_criteria": [
+        "`./gradlew :app:shared:jvmTest :app:webApp:compileKotlinWasmJs` passes",
+        "`technical` sees read-only staff fields only; `board` edits member data; `admin` sees `Accés` section and anonymize"
+      ],
+      "dependencies": ["T4"],
+      "components": ["MembersScreen + MemberEditDrawer + NewMemberModal"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    }
+  ]
+}

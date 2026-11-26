@@ -1,0 +1,411 @@
+{
+  "feature_name": "Platform web shell (GIS, session, nav, theme)",
+  "feature_slug": "platform-web-shell",
+  "project_profile": "tabala",
+  "parent_package": "com.bitdesal.tabala",
+  "scaffold": "MainScaffold",
+  "summary": "Management **webapp shell** (`:app:webApp` `wasmJs` + `:app:shared`): colla theme §7.2, `/entra` with Google GIS (`nonce` + DOM button overlay), in-memory access token + cookie refresh (`http://localhost` local dev aligned with `SameSite=Strict`), URL navigation (Navigation 2 + back-button logout guard), permission-based tabs (incl. `technical` access to `/configuracio` for achievements), user menu, `SessionsScreen` (incl. logout-all), and WasmGC browser fallback. **Web only**.",
+  "overview": "Foundation UI slice before feature specs (organigrama, calendari…). Replaces the demo `App()` with the real admin shell talking to `platform-server-auth` via `MuixerangaApi`.\n\n**Source of truth:** `docs/especificacion-tecnica.md` v1.3 §7.1–7.3, §7.5 · `docs/decisiones.md` (Navigation 2, Google GIS, no Firebase, `wasmJs` only in v1).\n\n**Prerequisites**\n- `platform-server-infra` + `platform-server-auth` running locally on `http://localhost:8080` (same-site with webpack dev server on `http://localhost:<port>` so `SameSite=Strict` cookies work).\n- `platform-core-contract`: `MuixerangaApi`, auth DTOs, `Permission` constants.\n- `platform-me-rgpd` plugs into `/configuracio-inicial` and `/el-meu-perfil` (this slice registers routes and exposes `AuthViewModel.onMeUpdated(MeResponse)`).\n\n**Acceptance (slice)**\n- `./gradlew :app:webApp:wasmJsBrowserDistribution :app:shared:jvmTest` succeeds.\n- Manual E2E: `/entra` → GIS login with `nonce` → token in RAM only (zero `localStorage`/`sessionStorage` token storage) → `GET /me` → home with tabs filtered by `permissions`.\n- Reload any deep link (`/calendari`, `/contractacions`) → silent `/auth/refresh` (`credentials: include`) → preserves route and session.\n- Logout → revokes session, calls `google.accounts.id.disableAutoSelect()`, clears backstack and replaces browser history so browser «Back» cannot return to protected UI (§10.2).\n- `technical` sees `/configuracio` (via `achievements:write` or `config:write`); `member` does not.\n- Auth errors `not_invited` / `account_disabled` display exact §7.3 Valencian copy.\n- Non-WasmGC browsers display a readable Valencian HTML fallback message before Wasm fails (§7.1).",
+  "client_scope": {
+    "preset": "web_only",
+    "server": false,
+    "android": false,
+    "desktop": false,
+    "web": true,
+    "ios": false,
+    "external_public_api": false
+  },
+  "modules": {
+    "core": ":core",
+    "server": ":server",
+    "shared": ":app:shared",
+    "androidApp": ":app:androidApp",
+    "desktopApp": ":app:desktopApp",
+    "webApp": ":app:webApp",
+    "iosApp": null
+  },
+  "shared_ui_policy": "All shell UI, theme, ViewModels, `SessionManager`, and Navigation 2 live in `:app:shared` (`commonMain` + `wasmJsMain` for GIS/URL/credentials expect/actual). `:app:webApp` only hosts `main()`, `index.html`, `styles.css`, and static assets. Android/desktop/JS are out of v1 scope (keep minimal compile stubs if needed so repo builds).",
+  "out_of_scope": "- Feature screens SPEC-01…08 (render Valencian `PlaceholderScreen` until each feature slice lands).\n- `:server` changes.\n- Android, desktop, JS, iOS clients.\n- Full Caddy CSP deployment (already documented in §9.4).\n- Mandatory One Tap prompt (optional `google.accounts.id.prompt()`).\n- `platform-me-rgpd` form UI (route placeholders + `onMeUpdated` callback hook).",
+  "external_systems": [
+    {
+      "name": "Google Identity Services",
+      "role": "Script `https://accounts.google.com/gsi/client`; client ID fetched at runtime from `GET /api/v1/auth/config`."
+    }
+  ],
+  "auth": {
+    "client": "GIS ID token (with random `nonce`) → `POST /api/v1/auth/google` (`client: web`, `credentials: include`). Access token in RAM only; proactive + 401 single-flight refresh via `mux_refresh` cookie.",
+    "server": "Consumed only (`platform-server-auth`)."
+  },
+  "data_model_refs": [
+    "docs/especificacion-tecnica.md §7.1–7.3, §7.5",
+    "docs/especificacion-tecnica.md §6.1.1 (permissions)",
+    "docs/decisiones.md",
+    "specs/platform-core-contract",
+    "specs/platform-server-auth"
+  ],
+  "images": [
+    {
+      "path": "assets/shell-desktop.png",
+      "caption": "Desktop shell: red top bar (#BB2029), colla crest + title, yellow active tab (#FFC432), navy user pill, page header kicker + CTA, and light-grey KPI card container",
+      "kind": "desktop"
+    },
+    {
+      "path": "assets/menu-usuari-desktop.png",
+      "caption": "Desktop user dropdown menu anchored under top-right navy user pill (must render with elevated z-index above page CTAs)",
+      "kind": "desktop"
+    },
+    {
+      "path": "assets/shell-mobile.png",
+      "caption": "Mobile shell: compact red top bar (crest + TP avatar + active section), horizontally scrollable KPI cards, red + FAB, and 4-tab bottom navigation bar (Calendari, Contractacions, Membres, Més)",
+      "kind": "mobile"
+    }
+  ],
+  "components": [
+    {
+      "name": "App.kt",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/App.kt",
+      "decision": "modify",
+      "usage": "Root `TabalaApp`: `TabalaTheme`, `AppNavigation`, auth/consent gate.",
+      "notes": "Remove template demo button and `Greeting`.",
+      "layer": "ui",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "main.kt",
+      "location": "app/webApp/src/webMain/kotlin/com/bitdesal/tabala/main.kt",
+      "decision": "modify",
+      "usage": "Read `API_BASE_URL` from `index.html` `<meta name=\"tabala-api-base-url\">` (with build-time placeholder substitution), start Koin, mount `ComposeViewport { TabalaApp() }`.",
+      "notes": "",
+      "layer": "webApp",
+      "module": ":app:webApp",
+      "sourceSet": "webMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "index.html & styles.css",
+      "location": "app/webApp/src/webMain/resources/index.html",
+      "decision": "modify",
+      "usage": "`lang=\"ca\"`, title «Muixeranga d'Elx — Gestió», `<meta name=\"tabala-api-base-url\" content=\"...\">`, async GIS script, `#google-signin-overlay` / `#google-signin-button` container, WasmGC feature-detection fallback banner + `<noscript>` in Valencian.",
+      "notes": "Fallback HTML login per §7.1 only if Wasm GIS interop hits a blocker (record in `docs/decisiones.md`).",
+      "layer": "webApp",
+      "module": ":app:webApp",
+      "sourceSet": "webMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "TabalaTheme + StringsCa",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/ui/theme/TabalaTheme.kt",
+      "decision": "create",
+      "usage": "Material 3 light-only theme (§7.2): red `#BB2029`, navy `#14005E`, yellow `#FFC432`, white `#FFFFFF`, black `#000000`, bundled Roboto font family (`composeResources/font/roboto_*.ttf`), colla logo resource placeholder, and centralized Valencian string resources (`StringsCa` / `strings.xml`, §7.5).",
+      "notes": "Never load fonts from Google Fonts CDN.",
+      "layer": "ui",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "GoogleSignInBridge (expect/actual)",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/platform/GoogleSignInBridge.kt",
+      "decision": "create",
+      "usage": "Generate cryptographic random `nonce`, call `google.accounts.id.initialize({client_id, callback, nonce, use_fedcm_for_prompt: true})` and `renderButton(..., {theme: 'outline', size: 'large', text: 'signin_with', locale: 'ca'})`, position/show `#google-signin-overlay` only while on `/entra`, expose `disableAutoSelect()` on logout.",
+      "notes": "Real implementation in `wasmJsMain`; no-op stubs in other targets for build compatibility.",
+      "layer": "platform",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "SessionManager",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/session/SessionManager.kt",
+      "decision": "create",
+      "usage": "In-memory access token store (`StateFlow`), proactive refresh ~60 s before `expiresIn`, single-flight `Mutex` refresh (prevents concurrent token rotation), Ktor `HttpClient` plugin attaching `Authorization: Bearer` + `credentials: include` on `/auth/*`, 401 single retry then logout, and `SharedFlow` signal on `403 consent_required`.",
+      "notes": "Never writes tokens to `localStorage` or `sessionStorage`.",
+      "layer": "session",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "AuthViewModel",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/session/AuthViewModel.kt",
+      "decision": "create",
+      "usage": "Exposes `StateFlow<AuthUiState>` (`Checking`, `LoggedOut(error?)`, `ConsentRequired(me)`, `Authenticated(me)`). Handles cold-start silent refresh, GIS credential exchange with `nonce`, `onMeUpdated(me)` hook for `platform-me-rgpd`, and logout.",
+      "notes": "",
+      "layer": "viewmodel",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "LoginScreen",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/shell/LoginScreen.kt",
+      "decision": "create",
+      "usage": "Route `/entra`: colla logo, «Gestió interna de la Muixeranga d'Elx», reserved visual slot aligned with `#google-signin-overlay`, and exact §7.3 Valencian error panels (`not_invited` with «Prova amb un altre compte», `account_disabled`).",
+      "notes": "",
+      "layer": "ui",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "MainScaffold",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/shell/MainScaffold.kt",
+      "decision": "create",
+      "usage": "Official mockup chrome (`decisiones.md`): **red (`#BB2029`) top bar** with colla crest + «Muixeranga d'Elx / Gestió», centered icon+label tabs (active tab yellow `#FFC432` with bottom yellow bar), right navy (`#14005E`) user pill (`TP` + name + role + chevron) opening an elevated dropdown menu («El meu perfil», «Sessions obertes», «Tanca la sessió»). On mobile (<600 dp, min width 360 dp): compact red bar (crest + `TP` avatar + centered section title), white 4-tab bottom navigation bar (`Calendari`, `Contractacions`, `Membres`, `Més` with red top active indicator), and red `+` FAB.",
+      "notes": "Shared reusable UI building blocks: `SectionHeader` (`GESTIÓ INTERNA` red kicker + bold title + subtitle + red `+ ...` CTA), `KpiFilterStrip` (light-grey bordered box with clickable white KPI cards; active card has soft cream fill + `#14005E` border & top stripe; alert cards use soft cream + red value), `RightSideSheet` (overlay edit drawer with sticky `Cancel·la` / `DESA` footer), `CenteredFormModal`, empty state, loading indicator, error banner with «Torna-ho a provar», and 409 conflict dialog.",
+      "layer": "ui",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "AppNavigation + WebHistorySync",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/navigation/AppNavigation.kt",
+      "decision": "create",
+      "usage": "Navigation Compose 2 with real URL paths synced to `window.location.pathname` / `popstate`. Enforces auth gate (`/entra`), consent gate (`/configuracio-inicial`), permission check per route, and replaces history + clears backstack on logout so «Back» stays on `/entra`.",
+      "notes": "",
+      "layer": "navigation",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "SessionsScreen + SessionsViewModel",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/shell/SessionsScreen.kt",
+      "decision": "create",
+      "usage": "Route `/sessions`: lists active sessions (`clientType`, `userAgent`, `lastUsedAt`, current badge), revoke single session (`DELETE /me/sessions/{id}`), and «Tanca totes les sessions» (`POST /auth/logout-all`).",
+      "notes": "",
+      "layer": "ui",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    },
+    {
+      "name": "SharedModules (Koin)",
+      "location": "app/shared/src/commonMain/kotlin/com/bitdesal/tabala/di/SharedModules.kt",
+      "decision": "create",
+      "usage": "Provides `ApiConfig`, `HttpClient`, `MuixerangaApi`, `SessionManager`, `AuthViewModel`, `SessionsViewModel`, and `GoogleSignInBridge`.",
+      "notes": "Started in `webApp/main.kt` before Compose mounts.",
+      "layer": "di",
+      "module": ":app:shared",
+      "sourceSet": "commonMain",
+      "clients": ["web"]
+    }
+  ],
+  "structure": "Web shell architecture:\n\n```text\napp/webApp/main.kt\n  → read API_BASE_URL from <meta> (default http://localhost:8080/api/v1 in dev)\n  → startKoin(sharedModules)\n  → ComposeViewport { TabalaTheme { TabalaApp() } }\n\nState routing:\n  Checking        → splash spinner (silent POST /api/v1/auth/refresh)\n  LoggedOut       → /entra (LoginScreen + #google-signin-overlay visible)\n  ConsentRequired → /configuracio-inicial (ConsentSetupScreen / stub)\n  Authenticated   → MainScaffold + NavHost (real URLs synced with History API)\n```\n\nNavigation destinations & permission gates:\n- `/organigrama` — «Organigrama» (`org-chart:read`)\n- `/calendari` — «Calendari» (`events:read`)\n- `/contractacions` — «Contractacions» (`contracts:read`)\n- `/inventari` — «Inventari» (`inventory:read`)\n- `/membres` — «Membres» (`users:read`)\n- `/figures` — «Figures» (`figures:read`)\n- `/documents` — «Documents» (`documents:read`)\n- `/configuracio` — «Configuració» (`config:write` OR `achievements:write`, per `decisiones.md` so `technical` manages achievements)\n- `/el-meu-perfil` — «El meu perfil» (always, self)\n- `/sessions` — «Sessions obertes» (always, self)\n- `/configuracio-inicial` — Setup RGPD (only when `!consent.dataProcessing`)",
+  "sections": [
+    {
+      "title": "Local dev origin & API_BASE_URL injection",
+      "description": "Gradle injects `API_BASE_URL` into `index.html` `<meta name=\"tabala-api-base-url\">` via `processResources` token replacement (default `http://localhost:8080/api/v1` in dev; `-PapiBaseUrl=https://api.muixerangadelx.com/api/v1` for production distribution).",
+      "behavior": "Using `http://localhost` (never `127.0.0.1`) for both webpack dev server and Ktor server ensures cookies are same-site (`SameSite=Strict`) and matches Google Cloud OAuth authorized origins (§4.6)."
+    },
+    {
+      "title": "GIS overlay & WasmGC fallback (§7.1)",
+      "description": "`index.html` runs a small inline WasmGC capability check before loading `webApp.js`; unsupported browsers immediately see a clear Valencian HTML message instead of a blank screen. When Compose is mounted, `#google-signin-overlay` is shown centered over the login card slot only when `AuthUiState` is `LoggedOut`.",
+      "behavior": "`GoogleSignInBridge` generates a fresh random `nonce` per sign-in attempt, passes it to `google.accounts.id.initialize`, and forwards both `credential` and `nonce` to `AuthViewModel` → `POST /api/v1/auth/google`. Clicking «Prova amb un altre compte» calls `disableAutoSelect()` and re-renders the button."
+    },
+    {
+      "title": "Protected binary fetch helper (for images & files)",
+      "description": "Provide a reusable helper on `SessionManager` / `MuixerangaApi` (`fetchAuthorizedBytes(url): ByteArray`) that sends `Authorization: Bearer` (with automatic 401 refresh retry) so later feature slices (`members`, `inventory`, `documents`) can render protected images via Compose `ImageBitmap` and trigger `Blob` downloads.",
+      "behavior": "Public URLs can load normally; protected `/api/v1/files/*` assets never rely on cookies or unauthenticated `<img>` tags."
+    },
+    {
+      "title": "Shared design system & Valencian formatting (§7.2, §7.5 & mockups)",
+      "description": "Bundle Roboto `.ttf` weights (Regular, Medium, Bold) in `app/shared/src/commonMain/composeResources/font/` and provide `DateTimeFormatCa` (`Europe/Madrid`, `ca-ES`) and `MoneyFormatCa` (`450,00 €`) helpers. Follow the official mockup visual system (`decisiones.md`): red (`#BB2029`) top header, yellow (`#FFC432`) active indicator, navy (`#14005E`) user pill & selected KPI accent, light-grey `KpiFilterStrip`, `RightSideSheet` for entity editing, and `CenteredFormModal` for creation/quick actions.",
+      "behavior": "Centralize all shell copy in Valencian resources (structured cleanly for `preferredLocale` support). Ensure the top-right user dropdown menu renders in a high z-index popup layer above page CTAs. On mobile (<600 dp), render the compact red bar, horizontal scrollable KPI cards, red `+` FAB, and 4-tab bottom bar with «Més» sheet/menu for secondary destinations (Organigrama, Inventari, Figures, Documents, Configuració)."
+    }
+  ],
+  "endpoints": [
+    {
+      "name": "Auth config",
+      "method": "GET",
+      "path": "/api/v1/auth/config",
+      "notes": "Fetch `googleClientId` before GIS init.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "none"
+    },
+    {
+      "name": "Google login",
+      "method": "POST",
+      "path": "/api/v1/auth/google",
+      "notes": "`credentials: include`, sends `idToken`, `client: \"web\"`, `nonce`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "none"
+    },
+    {
+      "name": "Refresh",
+      "method": "POST",
+      "path": "/api/v1/auth/refresh",
+      "notes": "Cookie `mux_refresh` (`credentials: include`).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "cookie"
+    },
+    {
+      "name": "Logout",
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "notes": "Sends Bearer (if present) + cookie (`credentials: include`).",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "optional-bearer-or-cookie"
+    },
+    {
+      "name": "Logout all sessions",
+      "method": "POST",
+      "path": "/api/v1/auth/logout-all",
+      "notes": "Triggered from `SessionsScreen`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Current user",
+      "method": "GET",
+      "path": "/api/v1/me",
+      "notes": "Loads self user, `consent.dataProcessing`, and `permissions`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Sessions list",
+      "method": "GET",
+      "path": "/api/v1/me/sessions",
+      "notes": "Displayed in `SessionsScreen`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    },
+    {
+      "name": "Revoke session",
+      "method": "DELETE",
+      "path": "/api/v1/me/sessions/{id}",
+      "notes": "Revoke individual session from `SessionsScreen`.",
+      "implemented_on": "server",
+      "consumed_by": ["web"],
+      "auth": "bearer"
+    }
+  ],
+  "persistence": "No client database. Access token lives strictly in RAM; refresh token lives only in `HttpOnly` cookie managed by the server.",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Gradle: Koin + Navigation 2 + Ktor wasmJs client",
+      "spec": "Add `koin-core`, `koin-compose`, `koin-compose-viewmodel`, `navigation-compose` (2.x), and `ktor-client-js` (wasmJs compatible engine) to `gradle/libs.versions.toml` and `:app:shared`. Configure `API_BASE_URL` placeholder processing in `app/webApp/build.gradle.kts`.",
+      "acceptance_criteria": [
+        "`./gradlew :app:shared:compileKotlinWasmJs :app:shared:jvmTest` succeeds"
+      ],
+      "dependencies": [],
+      "components": ["SharedModules (Koin)"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T2",
+      "title": "TabalaTheme, bundled Roboto, Valencian strings, and reusable chrome",
+      "spec": "Bundle Roboto `.ttf` fonts and colla logo asset in `composeResources`. Implement `TabalaTheme` (§7.2 palette + mockup visual system), `MainScaffold` (red `#BB2029` top header with yellow `#FFC432` active tab + navy `#14005E` user pill & elevated dropdown + mobile compact bar/bottom bar/FAB), `SectionHeader`, `KpiFilterStrip`, `RightSideSheet`, `CenteredFormModal`, `EmptyState`, `ErrorRetryBanner`, `VersionConflictDialog`, and `DateTimeFormatCa`/`MoneyFormatCa`.",
+      "acceptance_criteria": [
+        "Top bar `#BB2029`, active tab `#FFC432`, user pill & active KPI accent `#14005E` matching reference mockups",
+        "User dropdown renders cleanly above page buttons; mobile shows 4-tab bottom bar + FAB",
+        "Zero external Google Fonts references"
+      ],
+      "dependencies": ["T1"],
+      "components": ["TabalaTheme + StringsCa", "MainScaffold"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T3",
+      "title": "index.html, WasmGC fallback, and GIS host container",
+      "spec": "Update `app/webApp/src/webMain/resources/index.html` and `styles.css`: Valencian `lang=\"ca\"`, `<meta name=\"tabala-api-base-url\">`, WasmGC support detector with readable Valencian fallback, `<noscript>` warning, async GIS script, and centered `#google-signin-overlay` container.",
+      "acceptance_criteria": [
+        "Wasm bundle loads cleanly with no console errors",
+        "Fallback text renders when WasmGC is unavailable"
+      ],
+      "dependencies": [],
+      "components": ["index.html & styles.css"],
+      "target": "webApp",
+      "module": ":app:webApp",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T4",
+      "title": "GoogleSignInBridge (`wasmJsMain` expect/actual)",
+      "spec": "Implement `GoogleSignInBridge` generating cryptographic `nonce`, initializing GIS with `googleClientId` from `GET /auth/config`, rendering official button in `#google-signin-button`, toggling overlay visibility, forwarding `(idToken, nonce)`, and calling `disableAutoSelect()` on logout.",
+      "acceptance_criteria": [
+        "Compiles cleanly on `wasmJs` and JVM tests",
+        "`disableAutoSelect()` invoked on logout and «Prova amb un altre compte»"
+      ],
+      "dependencies": ["T3", "T1"],
+      "components": ["GoogleSignInBridge (expect/actual)"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T5",
+      "title": "SessionManager, authorized HttpClient, and binary fetch helper",
+      "spec": "Implement `SessionManager`: RAM-only access token, proactive refresh (~60 s prior), `Mutex` single-flight refresh, `credentials: include` on `/auth/*`, 401 single-retry + logout fallback, `consent_required` event emission, and `fetchAuthorizedBytes(url)` for protected files/images.",
+      "acceptance_criteria": [
+        "`jvmTest` verifies two concurrent 401/refresh calls trigger only one `/auth/refresh` request",
+        "`jvmTest` verifies 401 retry succeeds once and logs out on second 401",
+        "Zero references to `localStorage` or `sessionStorage` for tokens"
+      ],
+      "dependencies": ["T1"],
+      "components": ["SessionManager"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T6",
+      "title": "AuthViewModel + LoginScreen",
+      "spec": "Implement `AuthViewModel` (cold-start silent refresh, GIS login with `nonce`, `onMeUpdated(me)` hook, logout) and `LoginScreen` with exact §7.3 Valencian messages for `not_invited` and `account_disabled`.",
+      "acceptance_criteria": [
+        "`jvmTest` verifies error mapping for `not_invited`, `account_disabled`, and network failures",
+        "`jvmTest` verifies `onMeUpdated` transitions `ConsentRequired -> Authenticated`"
+      ],
+      "dependencies": ["T4", "T5"],
+      "components": ["AuthViewModel", "LoginScreen"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T7",
+      "title": "AppNavigation, URL sync, permission gates, and back-button logout guard",
+      "spec": "Wire Navigation Compose 2 with browser History API sync (`pathname` read/push/popstate). Filter visible tabs by `permissions` (`technical` sees `/configuracio` via `achievements:write`). Show `PlaceholderScreen` for unimplemented sections. On logout, clear backstack and `history.replaceState` to `/entra`.",
+      "acceptance_criteria": [
+        "`jvmTest` verifies `member` cannot see Contractacions/Configuració, `technical` sees Configuració, `board` sees Contractacions/Inventari/Documents",
+        "Reloading `/calendari` restores `/calendari` after silent refresh",
+        "Browser Back after logout remains on `/entra`"
+      ],
+      "dependencies": ["T2", "T6"],
+      "components": ["AppNavigation + WebHistorySync"],
+      "target": "shared",
+      "module": ":app:shared",
+      "clients_affected": ["web"]
+    },
+    {
+      "id": "T8",
+      "title": "SessionsScreen + wire App.kt and webApp main.kt",
+      "spec": "Implement `SessionsScreen` & `SessionsViewModel` (list sessions, revoke individual, logout all). Replace demo `App.kt` and update `app/webApp/.../main.kt` to start Koin and mount `TabalaApp()`. Run `:app:webApp:wasmJsBrowserDistribution` and `:app:shared:jvmTest`.",
+      "acceptance_criteria": [
+        "`./gradlew :app:shared:jvmTest :app:webApp:wasmJsBrowserDistribution` succeeds",
+        "No `GreetingUtil` or demo button remains in `:app:shared`"
+      ],
+      "dependencies": ["T7"],
+      "components": ["SessionsScreen + SessionsViewModel", "App.kt", "main.kt"],
+      "target": "webApp",
+      "module": ":app:webApp",
+      "clients_affected": ["web"]
+    }
+  ]
+}

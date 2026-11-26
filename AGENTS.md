@@ -6,41 +6,44 @@ Guidance for AI coding agents working on **Tabala** (Muixeranga d'Elx). This fil
 
 Tabala is a **Kotlin Multiplatform** monorepo: shared domain models, a **Ktor** backend on the VPS, and **Compose Multiplatform** clients (Android, Desktop JVM, Web JS/Wasm). Product scope covers colla operations — members, events, areas, contracts, inventory, figures, documents, attendance — aligned with the backend data model and API contract.
 
-Public web (Astro) and the management webapp are separate deployables; they talk to `api.<domain>` with Firebase ID tokens where required.
+Public web (Astro) and the management webapp are separate deployables; they talk to `api.<domain>` (Google Sign-In ID tokens exchanged for backend HS256 JWT + refresh sessions — **no Firebase**).
 
 ## Tech stack
 
 | Area | Choice |
 |------|--------|
 | Language | Kotlin (idiomatic) |
-| UI | Compose Multiplatform + Material 3 in `:app:shared` |
-| Architecture | MVVM + repositories; domain/DTOs in `:core` |
-| DI | **Koin** (`koin-core`, `koin-compose`, platform modules) |
-| Client networking | Ktor Client + kotlinx.serialization (JSON) |
-| Server | Ktor (JVM 21), Flyway migrations, REST JSON API |
-| Persistence | **SQLite** — authoritative on **`:server`**: schema in SQLDelight migrations (`server/src/main/sqldelight/migrations/V<n>__<name>.sqm`), exported to `db/migration/*.sql` and applied by **Flyway** at startup; queries via SQLDelight. Optional **SQLDelight cache** on Android/JVM clients when offline/read performance is needed |
-| Auth | **Firebase Authentication** (Google + email/password); backend verifies ID tokens, stores UID + role — **no passwords on server** |
+| UI | Compose Multiplatform + Material 3 in `:app:shared` (v1 target: Web `wasmJs` via `:app:webApp`) |
+| Architecture | MVVM + repositories; domain/DTOs, shared validation, i18n enum labels and `MuixerangaApi` (Ktor Client) in `:core` |
+| DI | **Koin** (`koin-core`, `koin-compose`, `koin-ktor`, platform modules) |
+| Client networking | Ktor Client + kotlinx.serialization (JSON) in `:core` |
+| Server | Ktor 3.x (JVM 21), Flyway migrations, REST JSON API |
+| Persistence | **SQLite** (WAL, `foreign_keys=ON`) — authoritative on **`:server`**: schema v0.2 in SQLDelight migrations (`server/src/main/sqldelight/migrations/V<n>__<name>.sqm`), exported to `db/migration/*.sql` and applied by **Flyway** at startup; queries via SQLDelight. Optional **SQLDelight cache** on Android/JVM clients in future phases |
+| Auth | **Google Sign-In** (OpenID Connect, invite-only) + own backend sessions (HS256 JWT 15 min + rotating refresh token 30 d); **no Firebase, no passwords on server** |
 | Reactivity | Coroutines, `StateFlow` / `SharedFlow`, ViewModels in `commonMain` where possible |
-| Serialization | kotlinx.serialization; contract per `backend/data-model/data-model.json` (IDs, ISO 8601 dates, `GeoPoint`) |
+| Serialization | kotlinx.serialization; contract per `docs/especificacion-tecnica.md` v1.3 (model v0.2) and `docs/decisiones.md` |
 
 ### Banned / do not introduce
 
+- **Firebase** — use Google Sign-In (OIDC) + own sessions only.
+- **Exposed** — use SQLDelight + Flyway.
 - **Hilt, Dagger, Metro** — use Koin only.
-- **Retrofit** on new code — prefer Ktor Client in shared code.
+- **Retrofit** on new code — prefer Ktor Client in shared code (`:core`).
 - **Room** — not multiplatform; use SQLDelight for SQLite on KMP/JVM/Android.
 - **XML layouts** for screens — UI is Compose. XML for Android manifest/resources only.
-- **Navigation 3** unless explicitly requested — use whatever navigation the project adopts in `commonMain` consistently.
-- Storing **passwords** or long-lived Firebase secrets in the repo or server DB.
+- **Navigation 3** unless explicitly requested — use Navigation Compose 2 consistently in `commonMain`.
+- Storing **passwords**, Google ID tokens, or raw refresh tokens in the repo or server DB.
 
 ## Repository layout
 
 ```
-core/                 # @Serializable models, shared validation, no UI
-server/               # Ktor app, SQLite, Flyway, Firebase token verification, file storage
+core/                 # @Serializable v0.2 DTOs, enums, i18n labels, shared validation, MuixerangaApi (Ktor Client), no UI
+server/               # Ktor app, SQLite v0.2, Flyway, Google OIDC + JWT/session auth, file storage
 app/shared/           # Compose UI, ViewModels, repositories, Koin modules (commonMain + targets)
-app/androidApp/       # Android entry + Koin start
-app/desktopApp/       # JVM desktop entry
-app/webApp/           # JS/Wasm browser entry
+app/androidApp/       # Android entry (out of v1 scope)
+app/desktopApp/       # JVM desktop entry (out of v1 scope)
+app/webApp/           # Web wasmJs browser entry (v1 management webapp)
+docs/                 # especificacion-tecnica.md (product source of truth) + decisiones.md
 specs/                # Feature specs (read before implementing a feature)
 ```
 
@@ -56,7 +59,7 @@ Gradle modules: `:core`, `:server`, `:app:shared`, `:app:androidApp`, `:app:desk
 
 ## Dependency injection (Koin)
 
-- Define modules in `:app:shared` (`commonMain`) and platform `*Main` for expect/actual bindings (e.g. database driver, Firebase on Android).
+- Define modules in `:app:shared` (`commonMain`) and platform `*Main` for expect/actual bindings (e.g. GIS DOM bridge, browser file download, URL sync on `wasmJsMain`).
 - Start Koin in each app module's `Application` / `main()` — not in composable bodies.
 - ViewModels: `koinViewModel()` or constructor injection via Koin; pass interfaces, not platform singletons.
 - Tests: `startKoin { modules(testModule) }` / `stopKoin()` or Koin test APIs; use fakes for repositories and `HttpClient`.
@@ -108,7 +111,7 @@ Do not add trivial wiring-only tests.
 ## Code quality priorities
 
 1. **Bugs** — logic, nullability, concurrency, auth/role gaps, SQL/API mismatches.
-2. **Platform correctness** — KMP source sets, Koin scopes, Ktor/Firebase/SQLDelight/Compose patterns.
+2. **Platform correctness** — KMP source sets, Koin scopes, Ktor/Google OIDC/SQLDelight/Compose patterns.
 3. **Understandability** — naming, single responsibility, constants over magic numbers.
 4. **Reusability** — share logic in `:core` or `commonMain`; avoid duplicating DTO mapping.
 
@@ -125,6 +128,6 @@ Do not add trivial wiring-only tests.
 
 ## References
 
-- Backend stack and infra (vault): Muixeranga `backend-stack.md`, `infraestructura-servidor.md`
-- Data model: `backend/data-model/data-model.json` (when present in repo or linked docs)
+- Product and technical spec: `docs/especificacion-tecnica.md` (v1.3)
+- Implementation decisions: `docs/decisiones.md`
 - BitDesal skills: `.cursor/skills/bitdesal-*` (KMP-aware prompts)
